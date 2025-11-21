@@ -117,6 +117,7 @@ public class TwoPhaseIDA {
     public long getPhase1TimeMs() { return phase1TimeMs; }
     public long getPhase2TimeMs() { return phase2TimeMs; }
     public int getPhase1Length() { return phase1Length; }
+    public int getPhase2Length() { return phase2Length; }
     public int[] getSolutionMovesArray() { return solutionMoves; }
     public int[] getSolutionPowersArray() { return solutionPowers; }
 

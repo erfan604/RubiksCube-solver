@@ -2,51 +2,128 @@ package rubikscube;
 
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 
 public class RunDeepCheck {
     public static void main(String[] args) throws Exception {
-        for (int i = 1; i <= 3; i++) {
+        for (int i = 1; i <= 5; i++) {
             String id = String.format("%02d", i);
-            System.out.println("\n=== Deep check scramble " + id + " ===");
+            System.out.println("\n=== Solve scramble " + id + " ===");
             List<String> net = Files.readAllLines(Paths.get("testcases/scramble" + id + ".txt"));
             char[] facelets = Solver.parseNetForVerify(net);
             CubieCube cc = NetToCubie.fromFacelets(facelets);
-            printCube("PARSED/INPUT", cc);
 
-            SimpleIDA simple = new SimpleIDA();
-            String prog = simple.solve(new CubieCube(cc));
-            System.out.println("Program-format returned: '" + prog + "'");
+            // We'll try TwoPhase first with a per-solve timeout, then fallback to SimpleIDA
+            long timeoutSec = 20;
+            String phase1Seq = "";
+            String phase2Seq = "";
+            String fullSeq = "";
+            long phase1Time = -1;
+            long phase2Time = -1;
+            long fullTime = -1;
 
-            // Apply forward (program-format)
-            CubieCube fwd = new CubieCube(cc);
-            applyProgram(fwd, prog);
-            printCube("AFTER applying FORWARD (program-format)", fwd);
-            System.out.println("solved? " + fwd.isSolved());
+            ExecutorService ex = Executors.newSingleThreadExecutor();
+            try {
+                TwoPhaseIDA tp = new TwoPhaseIDA();
+                Callable<String> call = () -> tp.solve(new CubieCube(cc));
+                Future<String> fut = ex.submit(call);
+                long tStart = System.nanoTime();
+                try {
+                    String sol = fut.get(timeoutSec, TimeUnit.SECONDS);
+                    long tEnd = System.nanoTime();
+                    fullTime = (tEnd - tStart) / 1_000_000; // ms
 
-            // build reversed+inverted candidate (program-format)
-            String revInv = reverseInvert(prog);
-            System.out.println("Reversed+inverted candidate (program-format): '" + revInv + "'");
+                    if (sol != null && !sol.isEmpty()) {
+                        // Extract phase sequences from solution arrays
+                        int p1len = tp.getPhase1Length();
+                        int[] moves = tp.getSolutionMovesArray();
+                        int[] powers = tp.getSolutionPowersArray();
+                        phase1Seq = buildUserFromMoves(moves, powers, 0, p1len);
+                        phase2Seq = buildUserFromMoves(moves, powers, p1len, tp.getPhase2TimeMs() >= 0 ? (sol.split("\\s+").length - p1len) : (moves.length - p1len));
+                        // safer: use phase2 length from tp.phase2Length via probing: compute total by counting non-zero until end
+                        int totalMoves = 0; for (int k=0;k<moves.length;k++) if (powers[k]!=0) totalMoves++; // approximate
+                        int p2len = totalMoves - p1len;
+                        phase2Seq = buildUserFromMoves(moves, powers, p1len, p2len);
 
-            // Apply revInv as program-format
-            CubieCube r1 = new CubieCube(cc);
-            applyProgram(r1, revInv);
-            printCube("AFTER applying REV+INV as program-format", r1);
-            System.out.println("solved? " + r1.isSolved());
+                        phase1Time = tp.getPhase1TimeMs();
+                        phase2Time = tp.getPhase2TimeMs();
+                        fullSeq = buildUserFromMoves(moves, powers, 0, p1len + p2len);
+                    } else {
+                        // TwoPhase failed; mark as such
+                        fullSeq = "";
+                    }
+                } catch (TimeoutException te) {
+                    fut.cancel(true);
+                    System.out.println("TwoPhase timed out after " + timeoutSec + "s");
+                }
+            } finally {
+                ex.shutdownNow();
+            }
 
-            // Interpret revInv as user-format (i.e., invert U,R,F,B powers before applying)
-            String asUser = interpretAsUser(revInv);
-            System.out.println("Reversed+inverted interpreted as USER-format: '" + asUser + "'");
-            CubieCube r2 = new CubieCube(cc);
-            applyProgram(r2, asUser); // applyProgram expects program-format; asUser here is actually program-format after conversion
-            printCube("AFTER applying REV+INV interpreted as USER->program", r2);
-            System.out.println("solved? " + r2.isSolved());
+            // If TwoPhase didn't produce a solution, try SimpleIDA (user-format returning solver)
+            if (fullSeq == null || fullSeq.isEmpty()) {
+                ExecutorService ex2 = Executors.newSingleThreadExecutor();
+                try {
+                    SimpleIDA s = new SimpleIDA();
+                    Callable<String> call2 = () -> s.solve(new CubieCube(cc));
+                    Future<String> fut2 = ex2.submit(call2);
+                    long tStart2 = System.nanoTime();
+                    try {
+                        String userSol = fut2.get(timeoutSec, TimeUnit.SECONDS);
+                        long tEnd2 = System.nanoTime();
+                        fullTime = (tEnd2 - tStart2) / 1_000_000;
+                        if (userSol != null) {
+                            fullSeq = userSol;
+                        }
+                    } catch (TimeoutException te) {
+                        fut2.cancel(true);
+                        System.out.println("SimpleIDA timed out after " + timeoutSec + "s");
+                    }
+                } finally {
+                    ex2.shutdownNow();
+                }
+            }
 
-            // Also try applying revInv by parsing tokens and inverting URFB during application
-            CubieCube r3 = new CubieCube(cc);
-            applyWithUserToggle(r3, revInv, true);
-            printCube("AFTER applying REV+INV with tokensAreUser=true", r3);
-            System.out.println("solved? " + r3.isSolved());
+            // Prepare file output lines — only the requested items
+            List<String> outLines = new ArrayList<>();
+            outLines.add("PHASE1: " + (phase1Seq == null ? "" : phase1Seq));
+            outLines.add("PHASE1_TIME_MS: " + (phase1Time >= 0 ? phase1Time : ""));
+            outLines.add("PHASE2: " + (phase2Seq == null ? "" : phase2Seq));
+            outLines.add("PHASE2_TIME_MS: " + (phase2Time >= 0 ? phase2Time : ""));
+            outLines.add("FULL: " + (fullSeq == null ? "" : fullSeq));
+            outLines.add("FULL_TIME_MS: " + (fullTime >= 0 ? fullTime : ""));
+
+            // Print to terminal
+            outLines.forEach(System.out::println);
+
+            // Write to file out_runNN.txt
+            Path outPath = Paths.get("out_run" + id + ".txt");
+            Files.write(outPath, outLines, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         }
+    }
+
+    // Build a user-format sequence string from move/power arrays in range [start, start+len)
+    private static String buildUserFromMoves(int[] moves, int[] powers, int start, int len) {
+        if (moves == null || powers == null || len <= 0) return "";
+        StringBuilder sb = new StringBuilder();
+        int end = Math.min(moves.length, start + len);
+        for (int i = start; i < end; i++) {
+            int mv = moves[i];
+            int p = powers[i];
+            if (p == 0) break;
+            char face = Moves.MOVE_NAMES[mv].charAt(0);
+            int outPower = p;
+            if (face == 'U' || face == 'R' || face == 'F' || face == 'B') {
+                if (p == 1) outPower = 3; else if (p == 3) outPower = 1;
+            }
+            sb.append(face);
+            if (outPower == 2) sb.append('2');
+            else if (outPower == 3) sb.append('\'');
+            if (i < end - 1) sb.append(' ');
+        }
+        return sb.toString();
     }
 
     private static void applyProgram(CubieCube c, String seq) {

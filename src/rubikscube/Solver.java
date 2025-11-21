@@ -6,7 +6,7 @@ import java.util.concurrent.*;
 
 public class Solver {
 
-    private static final int SOLVER_TIMEOUT_SECONDS = 9;
+    private static final int SOLVER_TIMEOUT_SECONDS = 60;
 
     public static void main(String[] args) {
 
@@ -18,89 +18,113 @@ public class Solver {
 
             CubieCube cc = NetToCubie.fromFacelets(facelets);
 
-            // Attempt to load pruning tables from disk; build silently if missing.
+            // Ensure pruning tables available (build if needed)
             boolean loaded = PruningTables.loadFromDisk();
             if (!loaded) {
                 PruningTables.buildAllBlocking();
                 PruningTables.saveToDisk();
             }
 
-            String sol = "";
-
-            // First try the TwoPhase solver with a timeout; fall back to SimpleIDA if it times out or fails.
             TwoPhaseIDA twoPhase = new TwoPhaseIDA();
-            ExecutorService exec1 = Executors.newSingleThreadExecutor();
-            Future<String> future1 = exec1.submit(() -> twoPhase.solve(cc));
+            ExecutorService exec = Executors.newSingleThreadExecutor();
+            Future<String> fut = exec.submit(() -> twoPhase.solve(cc));
 
-            boolean twoTimedOut = false;
+            String sol = null;
             long start = System.nanoTime();
             try {
-                sol = future1.get(SOLVER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                sol = fut.get(SOLVER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             } catch (TimeoutException te) {
-                future1.cancel(true);
-                twoTimedOut = true;
+                fut.cancel(true);
+                sol = "";
             } catch (InterruptedException | ExecutionException e) {
-                future1.cancel(true);
-                twoTimedOut = true;
+                fut.cancel(true);
+                sol = "";
             } finally {
-                exec1.shutdownNow();
+                exec.shutdownNow();
             }
             long end = System.nanoTime();
 
-            if (!twoTimedOut && sol != null && !sol.isEmpty()) {
-                // verify TwoPhase program-format solution actually solves the parsed cube
-                if (appliesAndSolves(cc, sol, false)) {
-                    long totalMs = (end - start) / 1_000_000;
-                    long p1 = twoPhase.getPhase1TimeMs();
-                    long p2 = twoPhase.getPhase2TimeMs();
-                    // sol is program-format; write user-format output
-                    String userSol = programToUserPublic(sol);
-                    String out = String.format("%s\nPHASE1 %dms\nPHASE2 %dms\nTOTAL %dms\n", userSol, p1, p2, totalMs);
-                    Files.writeString(Paths.get(args[1]), out);
-                    return;
-                }
-                // mark for fallback
-                sol = null;
+            long totalMs = (end - start) / 1_000_000;
+
+            String phase1Seq = "";
+            String phase2Seq = "";
+            long phase1Time = -1;
+            long phase2Time = -1;
+
+            if (sol != null && !sol.isEmpty()) {
+                // TwoPhase returns program-format; extract phase1/phase2 from solution arrays
+                int p1len = twoPhase.getPhase1Length();
+                int p2len = twoPhase.getPhase2Length();
+                int[] moves = twoPhase.getSolutionMovesArray();
+                int[] powers = twoPhase.getSolutionPowersArray();
+                phase1Seq = buildUserFromMoves(moves, powers, 0, p1len);
+                phase2Seq = buildUserFromMoves(moves, powers, p1len, p2len);
+                phase1Time = twoPhase.getPhase1TimeMs();
+                phase2Time = twoPhase.getPhase2TimeMs();
             }
 
-            if (twoTimedOut || sol == null || sol.isEmpty()) {
-                SimpleIDA simple = new SimpleIDA();
-                ExecutorService exec2 = Executors.newSingleThreadExecutor();
-                Future<String> future2 = exec2.submit(() -> simple.solve(cc));
-                start = System.nanoTime();
-                try {
-                    sol = future2.get(SOLVER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                } catch (TimeoutException te) {
-                    future2.cancel(true);
-                    sol = "TIMEOUT";
-                } catch (InterruptedException | ExecutionException e) {
-                    future2.cancel(true);
-                    sol = "";
-                } finally {
-                    exec2.shutdownNow();
-                }
-                end = System.nanoTime();
+            String fullUser = (sol == null) ? "" : programToUser(sol);
 
-                long totalMs = (end - start) / 1_000_000;
-                String out;
-                if ("TIMEOUT".equals(sol)) {
-                    out = "TIMEOUT\nTOTAL " + totalMs + "ms\n";
-                } else {
-                    // sol is program-format; write directly
-                    out = String.format("%s\nTOTAL %dms\n", sol, totalMs);
-                }
-                Files.writeString(Paths.get(args[1]), out);
-            }
+            List<String> out = new ArrayList<>();
+            out.add("PHASE1: " + (phase1Seq == null ? "" : phase1Seq));
+            out.add("PHASE1_TIME_MS: " + (phase1Time >= 0 ? phase1Time : ""));
+            out.add("PHASE2: " + (phase2Seq == null ? "" : phase2Seq));
+            out.add("PHASE2_TIME_MS: " + (phase2Time >= 0 ? phase2Time : ""));
+            out.add("FULL: " + (fullUser == null ? "" : fullUser));
+            out.add("FULL_TIME_MS: " + totalMs);
+
+            Files.write(Paths.get(args[1]), out);
 
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    public static String programToUserPublic(String seq) { return programToUser(seq); }
+    private static String buildUserFromMoves(int[] moves, int[] powers, int start, int len) {
+        if (moves == null || powers == null || len <= 0) return "";
+        StringBuilder sb = new StringBuilder();
+        int end = Math.min(moves.length, start + len);
+        for (int i = start; i < end; i++) {
+            int mv = moves[i];
+            int p = powers[i];
+            if (p == 0) break;
+            char face = Moves.MOVE_NAMES[mv].charAt(0);
+            int outPower = p;
+            if (face == 'U' || face == 'R' || face == 'F' || face == 'B') {
+                if (p == 1) outPower = 3; else if (p == 3) outPower = 1;
+            }
+            sb.append(face);
+            if (outPower == 2) sb.append('2');
+            else if (outPower == 3) sb.append('\'');
+            if (i < end - 1) sb.append(' ');
+        }
+        return sb.toString();
+    }
 
-    public static char[] parseNetForVerify(List<String> n) {
-        return parseNet(n);
+    private static int faceToMove(char f) {
+        switch (f) { case 'U': return Moves.U; case 'R': return Moves.R; case 'F': return Moves.F; case 'D': return Moves.D; case 'L': return Moves.L; case 'B': return Moves.B; }
+        return -1;
+    }
+
+    // convert program-format seq to user-format (no special inversion)
+    private static String programToUser(String seq) {
+        if (seq == null) return "";
+        StringBuilder out = new StringBuilder();
+        String[] toks = seq.trim().split("\\s+");
+        for (int i = 0; i < toks.length; i++) {
+            String t = toks[i];
+            if (t.isEmpty()) continue;
+            char face = t.charAt(0);
+            int power = 1;
+            if (t.length() == 1) power = 1;
+            else if (t.charAt(1) == '2') power = 2;
+            else power = 3;
+            out.append(face);
+            if (power == 2) out.append('2');
+            else if (power == 3) out.append('\'');
+            if (i < toks.length - 1) out.append(' ');
+        }
+        return out.toString();
     }
 
     private static char[] parseNet(List<String> n) {
@@ -144,83 +168,5 @@ public class Solver {
         }
 
         return f;
-    }
-
-    // Normalize solution so that it actually solves the provided cube. Returns user-convention solution string or null.
-    private static String normalizeSolution(CubieCube start, String sol) {
-        String[] toks = sol.trim().split("\\s+");
-        // variants: as-is, reversed
-        String asIs = String.join(" ", toks).trim();
-        String rev = "";
-        for (int i = toks.length - 1; i >= 0; i--) {
-            if (toks[i].isEmpty()) continue;
-            if (!rev.isEmpty()) rev += " ";
-            rev += toks[i];
-        }
-
-        // try: as-is treated as user (invert back when applying)
-        if (appliesAndSolves(start, asIs, true)) return asIs;
-        // as-is treated as program (convert to user for output)
-        if (appliesAndSolves(start, asIs, false)) return programToUser(asIs);
-        // reversed treated as user
-        if (appliesAndSolves(start, rev, true)) return rev;
-        // reversed treated as program
-        if (appliesAndSolves(start, rev, false)) return programToUser(rev);
-        return null;
-    }
-
-    private static boolean appliesAndSolves(CubieCube start, String seq, boolean tokensAreUser) {
-        CubieCube c = new CubieCube(start);
-        String[] toks = seq.trim().split("\\s+");
-        for (String t : toks) {
-            if (t.isEmpty()) continue;
-            char face = t.charAt(0);
-            int power = 1;
-            if (t.length() == 1) power = 1;
-            else if (t.charAt(1) == '2') power = 2;
-            else power = 3;
-            // if tokens are user, invert URFB back to program convention
-            if (tokensAreUser) {
-                if (face == 'U' || face == 'R' || face == 'F' || face == 'B') {
-                    if (power == 1) power = 3; else if (power == 3) power = 1;
-                }
-            }
-            int move = faceToMove(face);
-            if (move < 0) return false;
-            c.applyMove(move, power);
-        }
-        return c.isSolved();
-    }
-
-    private static int faceToMove(char f) {
-        switch (f) {
-            case 'U': return Moves.U;
-            case 'R': return Moves.R;
-            case 'F': return Moves.F;
-            case 'D': return Moves.D;
-            case 'L': return Moves.L;
-            case 'B': return Moves.B;
-        }
-        return -1;
-    }
-
-    // convert program-format seq to user-format (no special inversion)
-    private static String programToUser(String seq) {
-        StringBuilder out = new StringBuilder();
-        String[] toks = seq.trim().split("\\s+");
-        for (int i = 0; i < toks.length; i++) {
-            String t = toks[i];
-            if (t.isEmpty()) continue;
-            char face = t.charAt(0);
-            int power = 1;
-            if (t.length() == 1) power = 1;
-            else if (t.charAt(1) == '2') power = 2;
-            else power = 3;
-            out.append(face);
-            if (power == 2) out.append('2');
-            else if (power == 3) out.append('\'');
-            if (i < toks.length - 1) out.append(' ');
-        }
-        return out.toString();
     }
 }
