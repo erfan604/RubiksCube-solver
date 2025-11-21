@@ -46,15 +46,9 @@ public class PruningTables {
         cpPrun[0] = 0;
         udEpPrun[0] = 0;
 
-        Thread builder = new Thread(() -> {
-            try {
-                prioritizedBuildLoop();
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-        }, "PruningTables-Builder");
-        builder.setDaemon(true);
-        builder.start();
+        // build synchronously to ensure tables match current move defs
+        prioritizedBuildLoop();
+        initialized = true;
     }
 
     // public blocking full build

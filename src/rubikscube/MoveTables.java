@@ -6,6 +6,7 @@ public class MoveTables {
     public static int[][][] eoMove;
     public static int[][][] sliceMove;
     public static int[][][] cpMove;
+    public static int[][][] udEpMove;
 
     private static volatile boolean initialized = false;
 
@@ -17,6 +18,7 @@ public class MoveTables {
         eoMove = new int[6][4][PruningTables.N_EO];
         sliceMove = new int[6][4][PruningTables.N_SLICE];
         cpMove = new int[6][4][PruningTables.N_CP];
+        udEpMove = new int[6][4][PruningTables.N_UD_EP];
 
         // build tables by applying moves to representative CubieCube for each coord
         for (int move = 0; move < 6; move++) {
@@ -45,6 +47,11 @@ public class MoveTables {
                     cc.applyMove(move, p);
                     cpMove[move][p][cp] = cc.getCornerPermCoord();
                 }
+                for (int ud = 0; ud < PruningTables.N_UD_EP; ud++) {
+                    CubieCube cc = CubieCube.fromUDEdgePermCoord(ud);
+                    cc.applyMove(move, p);
+                    udEpMove[move][p][ud] = cc.getUDEdgePermCoord();
+                }
             }
         }
 
@@ -64,5 +71,8 @@ public class MoveTables {
     }
     public static int applyCP(int move, int power, int coord) {
         return cpMove[move][power][coord];
+    }
+    public static int applyUDEP(int move, int power, int coord) {
+        return udEpMove[move][power][coord];
     }
 }
