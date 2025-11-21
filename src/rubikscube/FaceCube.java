@@ -23,70 +23,69 @@ public class FaceCube {
     }
 
     // -------------------------------------------------
-    // CORNER facelet positions (Kociemba index layout)
+    // CORNER facelet positions (layout matching Solver.parseNet)
     // -------------------------------------------------
     private static final int[][] CORNER_FACELET = {
-            {0,  9, 38},  // URF
-            {2, 36, 11},  // UFL
-            {6, 18,  8},  // ULB
-            {4, 20, 27},  // UBR
-            {29, 26, 15}, // DFR
-            {33, 13, 24}, // DLF
-            {35, 47, 17}, // DBL
-            {31, 44, 42}  // DRB
+            { 8, 27, 20 }, // URF
+            { 6, 18, 11 }, // UFL
+            { 0,  9, 38 }, // ULB
+            { 2, 36, 29 }, // UBR
+            { 47, 26, 33 },// DFR
+            { 45, 17, 24 },// DLF
+            { 51, 44, 15 },// DBL
+            { 53, 35, 42 } // DRB
     };
 
     // -------------------------------------------------
-    // EDGE facelet positions
+    // EDGE facelet positions (layout matching Solver.parseNet)
     // -------------------------------------------------
     private static final int[][] EDGE_FACELET = {
-            {1,  10}, // UR
-            {3,  37}, // UF
-            {7,  19}, // UL
-            {5,  21}, // UB
-            {28, 12}, // DR
-            {30, 25}, // DF
-            {32, 14}, // DL
-            {34, 23}, // DB
-            {16, 39}, // FR
-            {22, 41}, // FL
-            {46, 45}, // BL
-            {52, 43}  // BR
+            {5, 28},   // 0 UR
+            {7, 19},   // 1 UF
+            {3, 10},   // 2 UL
+            {1, 37},   // 3 UB
+
+            {50, 34},  // 4 DR
+            {46, 25},  // 5 DF
+            {48, 16},  // 6 DL
+            {52, 43},  // 7 DB
+
+            {23, 30},  // 8 FR
+            {21, 14},  // 9 FL
+            {41, 12},  //10 BL
+            {39, 32}   //11 BR
     };
 
-    // -------------------------------------------------
-    // CORNER COLOR DEFINITION (using assignment colors!)
-    // Order = URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB
-    // -------------------------------------------------
-    private char[][] cornerColor = {
-            {Uc, Rc, Fc},  // URF
-            {Uc, Fc, Lc},  // UFL
-            {Uc, Lc, Bc},  // ULB
-            {Uc, Bc, Rc},  // UBR
-            {Dc, Fc, Rc},  // DFR
-            {Dc, Lc, Fc},  // DLF
-            {Dc, Bc, Lc},  // DBL
-            {Dc, Rc, Bc}   // DRB
-    };
+    // dynamic color accessors to ensure centers are already captured
+    private char[][] cornerColors() {
+        return new char[][] {
+                {Uc, Rc, Fc},  // URF
+                {Uc, Fc, Lc},  // UFL
+                {Uc, Lc, Bc},  // ULB
+                {Uc, Bc, Rc},  // UBR
+                {Dc, Fc, Rc},  // DFR
+                {Dc, Lc, Fc},  // DLF
+                {Dc, Bc, Lc},  // DBL
+                {Dc, Rc, Bc}   // DRB
+        };
+    }
 
-    // -------------------------------------------------
-    // EDGE COLOR DEFINITION (assignment colors)
-    // Order = UR,UF,UL,UB,DR,DF,DL,DB,FR,FL,BL,BR
-    // -------------------------------------------------
-    private char[][] edgeColor = {
-            {Uc, Rc},   // UR
-            {Uc, Fc},   // UF
-            {Uc, Lc},   // UL
-            {Uc, Bc},   // UB
-            {Dc, Rc},   // DR
-            {Dc, Fc},   // DF
-            {Dc, Lc},   // DL
-            {Dc, Bc},   // DB
-            {Fc, Rc},   // FR
-            {Fc, Lc},   // FL
-            {Bc, Lc},   // BL
-            {Bc, Rc}    // BR
-    };
+    private char[][] edgeColors() {
+        return new char[][] {
+                {Uc, Rc},   // UR
+                {Uc, Fc},   // UF
+                {Uc, Lc},   // UL
+                {Uc, Bc},   // UB
+                {Dc, Rc},   // DR
+                {Dc, Fc},   // DF
+                {Dc, Lc},   // DL
+                {Dc, Bc},   // DB
+                {Fc, Rc},   // FR
+                {Fc, Lc},   // FL
+                {Bc, Lc},   // BL
+                {Bc, Rc}    // BR
+        };
+    }
 
     // -------------------------------------------------
     // CORNER PERMUTATION + ORIENTATION
@@ -117,8 +116,9 @@ public class FaceCube {
     }
 
     private byte findCorner(char a, char b, char c) {
+        char[][] ccArr = cornerColors();
         for (byte i = 0; i < 8; i++) {
-            char[] CC = cornerColor[i];
+            char[] CC = ccArr[i];
             if (match3(a, b, c, CC[0], CC[1], CC[2])) return i;
         }
         return -1;
@@ -146,15 +146,17 @@ public class FaceCube {
 
         if (edge == -1) return 0;
 
-        // Orientation rules (same as Kociemba style)
+        // Orientation rules (Kociemba style):
+        //  - U/D layer edges are "good" if their U/D sticker is on U/D.
+        //  - Slice edges are "good" if their F/B sticker is on F/B.
         if (edge >= 8 && edge <= 11) {
-            return (byte) ((a == Fc || a == Lc) ? 1 : 0);
+            return (byte) ((a == Fc || a == Bc) ? 0 : 1);
         }
-
         return (byte) ((a == Uc || a == Dc) ? 0 : 1);
     }
 
     private byte findEdge(char a, char b) {
+        char[][] edgeColor = edgeColors();
         for (byte i = 0; i < 12; i++) {
             char x = edgeColor[i][0];
             char y = edgeColor[i][1];

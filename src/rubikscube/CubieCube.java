@@ -60,50 +60,51 @@ public class CubieCube {
         co[d] = (byte)((co[d] + 1) % 3);
     }
 
-    // single quarter-turn
+    // single clockwise quarter-turn (Singmaster)
     public void move(int m) {
         switch (m) {
             case Moves.U:
-                cycleCorner(cp, URF, UFL, ULB, UBR);
-                cycleCorner(co, URF, UFL, ULB, UBR);
-                cycleEdge(ep, UR, UF, UL, UB);
-                cycleEdge(eo, UR, UF, UL, UB);
+                cycleCorner(cp, URF, UBR, ULB, UFL);
+                cycleCorner(co, URF, UBR, ULB, UFL);
+                cycleEdge(ep, UR, UB, UL, UF);
+                cycleEdge(eo, UR, UB, UL, UF);
+                // orientations unchanged
                 break;
             case Moves.R:
-                cycleCorner(cp, URF, UBR, DRB, DFR);
-                cycleCorner(co, URF, UBR, DRB, DFR);
-                addCornerOri(co, URF, UBR, DRB, DFR);
-                cycleEdge(ep, UR, BR, DR, FR);
-                cycleEdge(eo, UR, BR, DR, FR);
+                cycleCorner(cp, URF, DFR, DRB, UBR);
+                cycleCorner(co, URF, DFR, DRB, UBR);
+                addCornerOri(co, URF, DFR, DRB, UBR);
+                cycleEdge(ep, UR, FR, DR, BR);
+                cycleEdge(eo, UR, FR, DR, BR);
                 break;
             case Moves.F:
-                cycleCorner(cp, UFL, URF, DFR, DLF);
-                cycleCorner(co, UFL, URF, DFR, DLF);
-                addCornerOri(co, UFL, URF, DFR, DLF);
-                cycleEdge(ep, UF, FR, DF, FL);
-                cycleEdge(eo, UF, FR, DF, FL);
-                eo[UF] ^= 1; eo[FR] ^= 1; eo[DF] ^= 1; eo[FL] ^= 1;
+                cycleCorner(cp, UFL, DLF, DFR, URF);
+                cycleCorner(co, UFL, DLF, DFR, URF);
+                addCornerOri(co, UFL, DLF, DFR, URF);
+                cycleEdge(ep, UF, FL, DF, FR);
+                cycleEdge(eo, UF, FL, DF, FR);
+                eo[UF] ^= 1; eo[FL] ^= 1; eo[DF] ^= 1; eo[FR] ^= 1;
                 break;
             case Moves.D:
-                cycleCorner(cp, DLF, DFR, DRB, DBL);
-                cycleCorner(co, DLF, DFR, DRB, DBL);
-                cycleEdge(ep, DF, DR, DB, DL);
-                cycleEdge(eo, DF, DR, DB, DL);
+                cycleCorner(cp, DFR, DLF, DBL, DRB);
+                cycleCorner(co, DFR, DLF, DBL, DRB);
+                cycleEdge(ep, DF, DL, DB, DR);
+                cycleEdge(eo, DF, DL, DB, DR);
                 break;
             case Moves.L:
-                cycleCorner(cp, ULB, UFL, DLF, DBL);
-                cycleCorner(co, ULB, UFL, DLF, DBL);
-                addCornerOri(co, ULB, UFL, DLF, DBL);
-                cycleEdge(ep, UL, FL, DL, BL);
-                cycleEdge(eo, UL, FL, DL, BL);
+                cycleCorner(cp, ULB, DBL, DLF, UFL);
+                cycleCorner(co, ULB, DBL, DLF, UFL);
+                addCornerOri(co, ULB, DBL, DLF, UFL);
+                cycleEdge(ep, UL, BL, DL, FL);
+                cycleEdge(eo, UL, BL, DL, FL);
                 break;
             case Moves.B:
-                cycleCorner(cp, UBR, ULB, DBL, DRB);
-                cycleCorner(co, UBR, ULB, DBL, DRB);
-                addCornerOri(co, UBR, ULB, DBL, DRB);
-                cycleEdge(ep, UB, BL, DB, BR);
-                cycleEdge(eo, UB, BL, DB, BR);
-                eo[UB] ^= 1; eo[BL] ^= 1; eo[DB] ^= 1; eo[BR] ^= 1;
+                cycleCorner(cp, UBR, DRB, DBL, ULB);
+                cycleCorner(co, UBR, DRB, DBL, ULB);
+                addCornerOri(co, UBR, DRB, DBL, ULB);
+                cycleEdge(ep, UB, BR, DB, BL);
+                cycleEdge(eo, UB, BR, DB, BL);
+                eo[UB] ^= 1; eo[BR] ^= 1; eo[DB] ^= 1; eo[BL] ^= 1;
                 break;
         }
     }
@@ -159,30 +160,32 @@ public class CubieCube {
     }
 
     public int getUDSliceCoord() {
-        int[] slice = new int[4]; int idx = 0;
-        for (int i = 0; i < 12; i++) {
-            int e = ep[i];
-            if (e == FR || e == FL || e == BL || e == BR) slice[idx++] = i;
-        }
+        // combinatorial index of which 4 positions hold slice edges (FR,FL,BL,BR)
         int coord = 0;
-        coord += nCr(slice[0], 1);
-        coord += nCr(slice[1], 2);
-        coord += nCr(slice[2], 3);
-        coord += nCr(slice[3], 4);
+        int r = 4;
+        for (int i = 11; i >= 0 && r > 0; i--) {
+            int e = ep[i];
+            if (e == FR || e == FL || e == BL || e == BR) {
+                coord += nCr(i, r);
+                r--;
+            }
+        }
         return coord;
     }
 
     public void setUDSliceCoord(int coord) {
-        int[] slicePos = new int[4];
-        for (int r = 4; r >= 1; r--) {
-            int n = 11;
-            while (nCr(n, r) > coord) n--;
-            slicePos[4 - r] = n;
-            coord -= nCr(n, r);
-        }
         Arrays.fill(ep, (byte)-1);
-        int s = FR;
-        for (int pos : slicePos) { ep[pos] = (byte)s++; }
+        int r = 4;
+        int placed = 0;
+        for (int i = 11; i >= 0 && r > 0; i--) {
+            int comb = nCr(i, r);
+            if (coord >= comb) {
+                coord -= comb;
+                ep[i] = (byte)(FR + placed);
+                placed++;
+                r--;
+            }
+        }
         int e = 0;
         for (int i = 0; i < 12; i++) {
             if (ep[i] == -1) {
@@ -234,6 +237,50 @@ public class CubieCube {
     }
 
     public static CubieCube fromCornerPermCoord(int coord) { CubieCube c = new CubieCube(); c.setCornerPermCoord(coord); return c; }
+
+    // UD-edge permutation coordinate (8! for edges UR,UF,UL,UB,DR,DF,DL,DB assuming slice solved)
+    public int getUDEdgePermCoord() {
+        int[] perm = new int[8];
+        int idx = 0;
+        for (int i = 0; i < 12; i++) {
+            int e = ep[i];
+            if (e < 8) perm[idx++] = e;
+        }
+        if (idx != 8) return 0;
+
+        int coord = 0; int[] used = new int[8];
+        for (int i = 0; i < 8; i++) {
+            int v = perm[i];
+            int smaller = 0;
+            for (int j = 0; j < v; j++) if (used[j] == 0) smaller++;
+            coord = coord * (8 - i) + smaller;
+            used[v] = 1;
+        }
+        return coord;
+    }
+
+    public void setUDEdgePermCoord(int coord) {
+        int[] perm = new int[8]; boolean[] used = new boolean[8];
+        int[] fact = new int[9]; fact[0]=1; for (int i=1;i<=8;i++) fact[i]=fact[i-1]*i;
+        int rem = coord;
+        for (int i = 0; i < 8; i++) {
+            int div = fact[7 - i];
+            int index = rem / div; rem = rem % div;
+            int j = 0, cnt = 0;
+            while (true) {
+                if (!used[j]) {
+                    if (cnt == index) break;
+                    cnt++;
+                }
+                j++;
+            }
+            perm[i] = j; used[j] = true;
+        }
+        for (int i = 0; i < 8; i++) ep[i] = (byte)perm[i];
+        ep[8]=FR; ep[9]=FL; ep[10]=BL; ep[11]=BR;
+    }
+
+    public static CubieCube fromUDEdgePermCoord(int coord) { CubieCube c = new CubieCube(); c.setUDEdgePermCoord(coord); return c; }
 
     // multiply and inverse
     public void multiply(CubieCube b, CubieCube out) {

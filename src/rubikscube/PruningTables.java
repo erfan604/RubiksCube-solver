@@ -10,11 +10,13 @@ public class PruningTables {
     public static final int N_EO = 2048;   // 2^11
     public static final int N_SLICE = 495; // C(12,4)
     public static final int N_CP = 40320;  // 8!
+    public static final int N_UD_EP = 40320; // 8! for UD edges
 
     public static final byte[] coPrun = new byte[N_CO];
     public static final byte[] eoPrun = new byte[N_EO];
     public static final byte[] slicePrun = new byte[N_SLICE];
     public static final byte[] cpPrun = new byte[N_CP];
+    public static final byte[] udEpPrun = new byte[N_UD_EP];
 
     // true once all tables are fully built
     public static volatile boolean initialized = false;
@@ -23,7 +25,8 @@ public class PruningTables {
     private static volatile boolean started = false;
 
     private static final String CACHE_FILE = "pbt.cache";
-    private static final byte[] MAGIC = new byte[] { 'P', 'B', 'T', 1 };
+    // bump magic/version because move definitions changed
+    private static final byte[] MAGIC = new byte[] { 'P', 'B', 'T', 4 };
 
     // start the asynchronous incremental builder (non-blocking)
     public static synchronized void initAsyncStart() {
@@ -41,6 +44,7 @@ public class PruningTables {
         eoPrun[0] = 0;
         slicePrun[0] = 0;
         cpPrun[0] = 0;
+        udEpPrun[0] = 0;
 
         Thread builder = new Thread(() -> {
             try {
@@ -75,6 +79,7 @@ public class PruningTables {
         eoPrun[0] = 0;
         slicePrun[0] = 0;
         cpPrun[0] = 0;
+        udEpPrun[0] = 0;
 
         prioritizedBuildLoop();
         initialized = true;
@@ -88,10 +93,12 @@ public class PruningTables {
             dos.writeInt(N_EO);
             dos.writeInt(N_SLICE);
             dos.writeInt(N_CP);
+            dos.writeInt(N_UD_EP);
             dos.write(coPrun);
             dos.write(eoPrun);
             dos.write(slicePrun);
             dos.write(cpPrun);
+            dos.write(udEpPrun);
             dos.flush();
         } catch (IOException e) {
             System.err.println("Failed to save PBT cache: " + e.getMessage());
@@ -110,11 +117,13 @@ public class PruningTables {
             int neo = dis.readInt();
             int nsl = dis.readInt();
             int ncp = dis.readInt();
-            if (nco != N_CO || neo != N_EO || nsl != N_SLICE || ncp != N_CP) return false;
+            int nud = dis.readInt();
+            if (nco != N_CO || neo != N_EO || nsl != N_SLICE || ncp != N_CP || nud != N_UD_EP) return false;
             dis.readFully(coPrun);
             dis.readFully(eoPrun);
             dis.readFully(slicePrun);
             dis.readFully(cpPrun);
+            dis.readFully(udEpPrun);
             initialized = true;
             started = true;
             return true;
@@ -130,6 +139,7 @@ public class PruningTables {
         buildEO();
         buildSlice();
         buildCP();
+        buildUDEP();
         initialized = true;
     }
 
@@ -232,6 +242,33 @@ public class PruningTables {
                         int y = d.getCornerPermCoord();
                         if (cpPrun[y] == -1) {
                             cpPrun[y] = (byte) depth;
+                            next.add(y);
+                        }
+                    }
+                }
+            }
+            front = next;
+            try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+        }
+    }
+
+    private static void buildUDEP() {
+        ArrayDeque<Integer> front = new ArrayDeque<>();
+        front.add(0);
+        int depth = 0;
+        while (!front.isEmpty()) {
+            depth++;
+            ArrayDeque<Integer> next = new ArrayDeque<>();
+            while (!front.isEmpty()) {
+                int x = front.remove();
+                CubieCube c = CubieCube.fromUDEdgePermCoord(x);
+                for (int m = 0; m < 6; m++) {
+                    for (int p = 1; p <= 3; p++) {
+                        CubieCube d = new CubieCube(c);
+                        d.applyMove(m, p);
+                        int y = d.getUDEdgePermCoord();
+                        if (udEpPrun[y] == -1) {
+                            udEpPrun[y] = (byte) depth;
                             next.add(y);
                         }
                     }
