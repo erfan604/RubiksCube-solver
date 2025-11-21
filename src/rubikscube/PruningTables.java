@@ -1,124 +1,250 @@
 package rubikscube;
 
+import java.util.*;
+import java.nio.file.*;
+import java.io.*;
+
 public class PruningTables {
 
     public static final int N_CO = 2187;   // 3^7
     public static final int N_EO = 2048;   // 2^11
     public static final int N_SLICE = 495; // C(12,4)
+    public static final int N_CP = 40320;  // 8!
 
-    public static byte[] coPrun = new byte[N_CO];
-    public static byte[] eoPrun = new byte[N_EO];
-    public static byte[] slicePrun = new byte[N_SLICE];
+    public static final byte[] coPrun = new byte[N_CO];
+    public static final byte[] eoPrun = new byte[N_EO];
+    public static final byte[] slicePrun = new byte[N_SLICE];
+    public static final byte[] cpPrun = new byte[N_CP];
 
-    public static boolean initialized = false;
+    // true once all tables are fully built
+    public static volatile boolean initialized = false;
 
-    // -------------------------------------------------------
-    // Initialization entry point
-    // -------------------------------------------------------
-    public static void init() {
+    // true once async builder has been started
+    private static volatile boolean started = false;
+
+    private static final String CACHE_FILE = "pbt.cache";
+    private static final byte[] MAGIC = new byte[] { 'P', 'B', 'T', 1 };
+
+    // start the asynchronous incremental builder (non-blocking)
+    public static synchronized void initAsyncStart() {
+        if (started) return;
+        started = true;
+
+        // mark arrays as uninitialized
+        Arrays.fill(coPrun, (byte)-1);
+        Arrays.fill(eoPrun, (byte)-1);
+        Arrays.fill(slicePrun, (byte)-1);
+        Arrays.fill(cpPrun, (byte)-1);
+
+        // set identity positions
+        coPrun[0] = 0;
+        eoPrun[0] = 0;
+        slicePrun[0] = 0;
+        cpPrun[0] = 0;
+
+        Thread builder = new Thread(() -> {
+            try {
+                prioritizedBuildLoop();
+            } catch (Throwable t) {
+                t.printStackTrace();
+            }
+        }, "PruningTables-Builder");
+        builder.setDaemon(true);
+        builder.start();
+    }
+
+    // public blocking full build
+    public static synchronized void buildAllBlocking() {
         if (initialized) return;
-        initCOPrun();
-        initEOPrun();
-        initSlicePrun();
+        if (started) {
+            // someone started async; wait a little for it to finish
+            long t0 = System.currentTimeMillis();
+            while (!initialized && System.currentTimeMillis() - t0 < 120_000) {
+                try { Thread.sleep(200); } catch (InterruptedException e) { break; }
+            }
+            if (initialized) return;
+        }
+        started = true;
+
+        Arrays.fill(coPrun, (byte)-1);
+        Arrays.fill(eoPrun, (byte)-1);
+        Arrays.fill(slicePrun, (byte)-1);
+        Arrays.fill(cpPrun, (byte)-1);
+
+        coPrun[0] = 0;
+        eoPrun[0] = 0;
+        slicePrun[0] = 0;
+        cpPrun[0] = 0;
+
+        prioritizedBuildLoop();
         initialized = true;
     }
 
-    // -------------------------------------------------------
-    // Corner orientation pruning table
-    // -------------------------------------------------------
-    private static void initCOPrun() {
-        for (int i = 0; i < N_CO; i++) coPrun[i] = -1;
+    // save current arrays to disk
+    public static synchronized void saveToDisk() {
+        try (OutputStream os = Files.newOutputStream(Paths.get(CACHE_FILE)); DataOutputStream dos = new DataOutputStream(os)) {
+            dos.write(MAGIC);
+            dos.writeInt(N_CO);
+            dos.writeInt(N_EO);
+            dos.writeInt(N_SLICE);
+            dos.writeInt(N_CP);
+            dos.write(coPrun);
+            dos.write(eoPrun);
+            dos.write(slicePrun);
+            dos.write(cpPrun);
+            dos.flush();
+        } catch (IOException e) {
+            System.err.println("Failed to save PBT cache: " + e.getMessage());
+        }
+    }
 
-        CubieCube c = new CubieCube();
-        coPrun[c.getCornerOriCoord()] = 0;
+    // try load from disk; returns true on success
+    public static synchronized boolean loadFromDisk() {
+        Path p = Paths.get(CACHE_FILE);
+        if (!Files.exists(p)) return false;
+        try (InputStream is = Files.newInputStream(p); DataInputStream dis = new DataInputStream(is)) {
+            byte[] magic = new byte[MAGIC.length];
+            dis.readFully(magic);
+            if (!Arrays.equals(magic, MAGIC)) return false;
+            int nco = dis.readInt();
+            int neo = dis.readInt();
+            int nsl = dis.readInt();
+            int ncp = dis.readInt();
+            if (nco != N_CO || neo != N_EO || nsl != N_SLICE || ncp != N_CP) return false;
+            dis.readFully(coPrun);
+            dis.readFully(eoPrun);
+            dis.readFully(slicePrun);
+            dis.readFully(cpPrun);
+            initialized = true;
+            started = true;
+            return true;
+        } catch (IOException e) {
+            System.err.println("Failed to load PBT cache: " + e.getMessage());
+            return false;
+        }
+    }
 
-        int done = 1;
+    // build CO then EO then SLICE then CP sequentially but in an incremental manner
+    private static void prioritizedBuildLoop() {
+        buildCO();
+        buildEO();
+        buildSlice();
+        buildCP();
+        initialized = true;
+    }
+
+    private static void buildCO() {
+        ArrayDeque<Integer> front = new ArrayDeque<>();
+        front.add(0);
         int depth = 0;
-
-        while (done < N_CO) {
+        while (!front.isEmpty()) {
             depth++;
-            for (int i = 0; i < N_CO; i++) {
-                if (coPrun[i] == depth - 1) {
-                    c.setCornerOriCoord(i);
-                    for (int m = 0; m < 6; m++) {
-                        for (int p = 1; p <= 3; p++) {
-                            CubieCube d = new CubieCube(c);
-                            d.applyMove(m, p);
-                            int idx = d.getCornerOriCoord();
-                            if (coPrun[idx] == -1) {
-                                coPrun[idx] = (byte) depth;
-                                done++;
-                            }
+            ArrayDeque<Integer> next = new ArrayDeque<>();
+            while (!front.isEmpty()) {
+                int x = front.remove();
+                CubieCube c = CubieCube.fromCornerOriCoord(x);
+                for (int m = 0; m < 6; m++) {
+                    for (int p = 1; p <= 3; p++) {
+                        CubieCube d = new CubieCube(c);
+                        d.applyMove(m, p);
+                        int y = d.getCornerOriCoord();
+                        if (coPrun[y] == -1) {
+                            coPrun[y] = (byte) depth;
+                            next.add(y);
                         }
                     }
                 }
             }
+            front = next;
+            // yield briefly to allow solver threads to make progress
+            try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
         }
     }
 
-    // -------------------------------------------------------
-    // Edge orientation pruning table
-    // -------------------------------------------------------
-    private static void initEOPrun() {
-        for (int i = 0; i < N_EO; i++) eoPrun[i] = -1;
-
-        CubieCube c = new CubieCube();
-        eoPrun[c.getEdgeOriCoord()] = 0;
-
-        int done = 1;
+    private static void buildEO() {
+        ArrayDeque<Integer> front = new ArrayDeque<>();
+        front.add(0);
         int depth = 0;
-
-        while (done < N_EO) {
+        while (!front.isEmpty()) {
             depth++;
-            for (int i = 0; i < N_EO; i++) {
-                if (eoPrun[i] == depth - 1) {
-                    c.setEdgeOriCoord(i);
-                    for (int m = 0; m < 6; m++) {
-                        for (int p = 1; p <= 3; p++) {
-                            CubieCube d = new CubieCube(c);
-                            d.applyMove(m, p);
-                            int idx = d.getEdgeOriCoord();
-                            if (eoPrun[idx] == -1) {
-                                eoPrun[idx] = (byte) depth;
-                                done++;
-                            }
+            ArrayDeque<Integer> next = new ArrayDeque<>();
+            while (!front.isEmpty()) {
+                int x = front.remove();
+                CubieCube c = CubieCube.fromEdgeOriCoord(x);
+                for (int m = 0; m < 6; m++) {
+                    for (int p = 1; p <= 3; p++) {
+                        CubieCube d = new CubieCube(c);
+                        d.applyMove(m, p);
+                        int y = d.getEdgeOriCoord();
+                        if (eoPrun[y] == -1) {
+                            eoPrun[y] = (byte) depth;
+                            next.add(y);
                         }
                     }
                 }
             }
+            front = next;
+            try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
         }
     }
 
-    // -------------------------------------------------------
-    // Slice coordinate pruning table
-    // -------------------------------------------------------
-    private static void initSlicePrun() {
-        for (int i = 0; i < N_SLICE; i++) slicePrun[i] = -1;
-
-        CubieCube c = new CubieCube();
-        slicePrun[c.getUDSliceCoord()] = 0;
-
-        int done = 1;
+    private static void buildSlice() {
+        ArrayDeque<Integer> front = new ArrayDeque<>();
+        front.add(0);
         int depth = 0;
-
-        while (done < N_SLICE) {
+        while (!front.isEmpty()) {
             depth++;
-            for (int i = 0; i < N_SLICE; i++) {
-                if (slicePrun[i] == depth - 1) {
-                    c.setUDSliceCoord(i);
-                    for (int m = 0; m < 6; m++) {
-                        for (int p = 1; p <= 3; p++) {
-                            CubieCube d = new CubieCube(c);
-                            d.applyMove(m, p);
-                            int idx = d.getUDSliceCoord();
-                            if (slicePrun[idx] == -1) {
-                                slicePrun[idx] = (byte) depth;
-                                done++;
-                            }
+            ArrayDeque<Integer> next = new ArrayDeque<>();
+            while (!front.isEmpty()) {
+                int x = front.remove();
+                CubieCube c = CubieCube.fromUDSliceCoord(x);
+                for (int m = 0; m < 6; m++) {
+                    for (int p = 1; p <= 3; p++) {
+                        CubieCube d = new CubieCube(c);
+                        d.applyMove(m, p);
+                        int y = d.getUDSliceCoord();
+                        if (slicePrun[y] == -1) {
+                            slicePrun[y] = (byte) depth;
+                            next.add(y);
                         }
                     }
                 }
             }
+            front = next;
+            try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
         }
     }
+
+    private static void buildCP() {
+        ArrayDeque<Integer> front = new ArrayDeque<>();
+        front.add(0);
+        int depth = 0;
+        while (!front.isEmpty()) {
+            depth++;
+            ArrayDeque<Integer> next = new ArrayDeque<>();
+            while (!front.isEmpty()) {
+                int x = front.remove();
+                CubieCube c = CubieCube.fromCornerPermCoord(x);
+                for (int m = 0; m < 6; m++) {
+                    for (int p = 1; p <= 3; p++) {
+                        CubieCube d = new CubieCube(c);
+                        d.applyMove(m, p);
+                        int y = d.getCornerPermCoord();
+                        if (cpPrun[y] == -1) {
+                            cpPrun[y] = (byte) depth;
+                            next.add(y);
+                        }
+                    }
+                }
+            }
+            front = next;
+            try { Thread.sleep(10); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+        }
+    }
+
+    // Helper queries so solver can see partial readiness
+    public static boolean isCOReady() { return coPrun[N_CO-1] != -1; }
+    public static boolean isEOReady() { return eoPrun[N_EO-1] != -1; }
+    public static boolean isSliceReady() { return slicePrun[N_SLICE-1] != -1; }
+    public static boolean isCPReady() { return cpPrun[N_CP-1] != -1; }
 }

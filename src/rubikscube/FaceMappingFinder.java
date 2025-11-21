@@ -4,7 +4,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 
-public class FaceMappingFinder {
+public final class FaceMappingFinder {
+    private FaceMappingFinder() {}
+
     static char[] userFaces = {'U','R','F','D','L','B'};
 
     public static void main(String[] args) throws Exception {
@@ -13,17 +15,60 @@ public class FaceMappingFinder {
         String seq2 = "F B B B"; // user expected for scramble02 (FBBB)
 
         List<String> lines1 = Files.readAllLines(Paths.get("testcases/scramble01.txt"));
-        char[] f1 = ParserTester.parseNetOnly(lines1);
+        char[] f1 = parseNet(lines1);
         CubieCube c1 = NetToCubie.fromFacelets(f1);
 
         List<String> lines2 = Files.readAllLines(Paths.get("testcases/scramble02.txt"));
-        char[] f2 = ParserTester.parseNetOnly(lines2);
+        char[] f2 = parseNet(lines2);
         CubieCube c2 = NetToCubie.fromFacelets(f2);
 
         int[] perm = new int[6];
         boolean[] used = new boolean[6];
         if (searchPerm(0, perm, used, c1, c2, seq1, seq2)) return;
         System.out.println("No mapping found that makes both sequences solve.");
+    }
+
+    private static char[] parseNet(List<String> n) {
+        char[] f = new char[54];
+
+        // U
+        for (int r = 0; r < 3; r++) {
+            String line = n.get(r).strip();
+            f[r*3+0]=line.charAt(0);
+            f[r*3+1]=line.charAt(1);
+            f[r*3+2]=line.charAt(2);
+        }
+
+        // middle rows
+        for (int r = 0; r < 3; r++) {
+            String raw = n.get(3+r).replaceAll("\\s+", "");
+
+            f[9 + r*3 + 0] = raw.charAt(0);
+            f[9 + r*3 + 1] = raw.charAt(1);
+            f[9 + r*3 + 2] = raw.charAt(2);
+
+            f[18 + r*3 + 0] = raw.charAt(3);
+            f[18 + r*3 + 1] = raw.charAt(4);
+            f[18 + r*3 + 2] = raw.charAt(5);
+
+            f[27 + r*3 + 0] = raw.charAt(6);
+            f[27 + r*3 + 1] = raw.charAt(7);
+            f[27 + r*3 + 2] = raw.charAt(8);
+
+            f[36 + r*3 + 0] = raw.charAt(9);
+            f[36 + r*3 + 1] = raw.charAt(10);
+            f[36 + r*3 + 2] = raw.charAt(11);
+        }
+
+        // D
+        for (int r = 0; r < 3; r++) {
+            String line = n.get(6+r).strip();
+            f[45 + r*3+0]=line.charAt(0);
+            f[45 + r*3+1]=line.charAt(1);
+            f[45 + r*3+2]=line.charAt(2);
+        }
+
+        return f;
     }
 
     private static boolean searchPerm(int idx, int[] perm, boolean[] used, CubieCube c1, CubieCube c2, String seq1, String seq2) {

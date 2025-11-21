@@ -9,11 +9,13 @@ public class SimpleIDA {
     private int solLength;
 
     public String solve(CubieCube start) {
-        Tables.init();
+        // Start incremental pruning-table builder (non-blocking)
+        PruningTables.initAsyncStart();
 
         if (start.isSolved()) return "";
 
         for (int depth = 1; depth <= MAX_DEPTH; depth++) {
+            if (Thread.currentThread().isInterrupted()) break;
             if (search(start, 0, depth, -1)) {
                 return buildSolutionVerified(start);
             }
@@ -22,6 +24,7 @@ public class SimpleIDA {
     }
 
     private boolean search(CubieCube node, int depth, int limit, int lastMove) {
+        if (Thread.currentThread().isInterrupted()) return false;
         int h = heuristic(node);
         if (depth + h > limit) return false;
 
@@ -31,9 +34,11 @@ public class SimpleIDA {
         }
 
         for (int move = 0; move < 6; move++) {
+            if (Thread.currentThread().isInterrupted()) return false;
             if (move == lastMove) continue;
 
             for (int p = 1; p <= 3; p++) {
+                if (Thread.currentThread().isInterrupted()) return false;
                 CubieCube next = new CubieCube(node);
                 next.applyMove(move, p);
 
@@ -55,10 +60,10 @@ public class SimpleIDA {
         int cp = c.getCornerPermCoord();
         int sl = c.getUDSliceCoord();
 
-        int h1 = Tables.coPrun[co];
-        int h2 = Tables.eoPrun[eo];
-        int h3 = Tables.cpPrun[cp];
-        int h4 = Tables.slicePrun[sl];
+        int h1 = PruningTables.coPrun[co];
+        int h2 = PruningTables.eoPrun[eo];
+        int h3 = PruningTables.cpPrun[cp];
+        int h4 = PruningTables.slicePrun[sl];
 
         int h = Math.max(Math.max(h1, h2), Math.max(h3, h4));
         return (h < 0) ? 0 : h;
@@ -80,25 +85,35 @@ public class SimpleIDA {
         // Apply forward to a copy
         CubieCube test = new CubieCube(start);
         for (int i = 0; i < solLength; i++) test.applyMove(solMoves[i], solPowers[i]);
-        if (test.isSolved()) return translateToUser(forward);
+        if (test.isSolved()) {
+            return forward; // program-format
+        }
 
-        // Try reversed order
+        // Try reversed order (use inverse powers)
         CubieCube test2 = new CubieCube(start);
-        for (int i = solLength - 1; i >= 0; i--) test2.applyMove(solMoves[i], solPowers[i]);
+        for (int i = solLength - 1; i >= 0; i--) {
+            int mv = solMoves[i];
+            int p = solPowers[i];
+            int inv = (p == 2) ? 2 : ((p == 1) ? 3 : 1);
+            test2.applyMove(mv, inv);
+        }
         if (test2.isSolved()) {
             StringBuilder sb = new StringBuilder();
             for (int i = solLength - 1; i >= 0; i--) {
-                sb.append(Moves.moveToString(solMoves[i], solPowers[i]));
+                int mv = solMoves[i];
+                int p = solPowers[i];
+                int inv = (p == 2) ? 2 : ((p == 1) ? 3 : 1);
+                sb.append(Moves.moveToString(mv, inv));
                 if (i > 0) sb.append(" ");
             }
-            return translateToUser(sb.toString());
+            return sb.toString();
         }
 
-        // Fallback
-        return translateToUser(forward);
+        // Fallback: return forward (program-format)
+        return forward;
     }
 
-    // Translate program moves into user's convention by inverting U,R,F,B (mapping discovered earlier)
+    // Translate program moves into user's convention by inverting U,R,F,B
     private String translateToUser(String progSeq) {
         if (progSeq == null || progSeq.isEmpty()) return progSeq;
         StringBuilder out = new StringBuilder();
