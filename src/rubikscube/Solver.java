@@ -6,7 +6,7 @@ import java.util.concurrent.*;
 
 public class Solver {
 
-    private static final int SOLVER_TIMEOUT_SECONDS = 60;
+    private static final int DEFAULT_SOLVER_TIMEOUT_SECONDS = 60;
 
     public static void main(String[] args) {
 
@@ -25,14 +25,26 @@ public class Solver {
                 PruningTables.saveToDisk();
             }
 
+            int timeoutSeconds = DEFAULT_SOLVER_TIMEOUT_SECONDS;
+            if (args.length >= 3) {
+                try { timeoutSeconds = Integer.parseInt(args[2]); } catch (Exception e) { /* ignore */ }
+            }
+
+            String sol = "";
+            long start = System.nanoTime();
+
+            long phase1Time = -1;
+            long phase2Time = -1;
+            String phase1Seq = "";
+            String phase2Seq = "";
+
+            // create TwoPhase instance here and reuse it so we can read lengths/moves after solving
             TwoPhaseIDA twoPhase = new TwoPhaseIDA();
             ExecutorService exec = Executors.newSingleThreadExecutor();
             Future<String> fut = exec.submit(() -> twoPhase.solve(cc));
 
-            String sol = null;
-            long start = System.nanoTime();
             try {
-                sol = fut.get(SOLVER_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                sol = fut.get(timeoutSeconds, TimeUnit.SECONDS);
             } catch (TimeoutException te) {
                 fut.cancel(true);
                 sol = "";
@@ -42,17 +54,9 @@ public class Solver {
             } finally {
                 exec.shutdownNow();
             }
-            long end = System.nanoTime();
 
-            long totalMs = (end - start) / 1_000_000;
-
-            String phase1Seq = "";
-            String phase2Seq = "";
-            long phase1Time = -1;
-            long phase2Time = -1;
-
+            // if solver returned a solution, extract phase info from the same instance
             if (sol != null && !sol.isEmpty()) {
-                // TwoPhase returns program-format; extract phase1/phase2 from solution arrays
                 int p1len = twoPhase.getPhase1Length();
                 int p2len = twoPhase.getPhase2Length();
                 int[] moves = twoPhase.getSolutionMovesArray();
@@ -62,6 +66,10 @@ public class Solver {
                 phase1Time = twoPhase.getPhase1TimeMs();
                 phase2Time = twoPhase.getPhase2TimeMs();
             }
+
+            long end = System.nanoTime();
+
+            long totalMs = (end - start) / 1_000_000;
 
             String fullUser = (sol == null) ? "" : programToUser(sol);
 
@@ -82,23 +90,17 @@ public class Solver {
 
     private static String buildUserFromMoves(int[] moves, int[] powers, int start, int len) {
         if (moves == null || powers == null || len <= 0) return "";
-        StringBuilder sb = new StringBuilder();
+        StringBuilder prog = new StringBuilder();
         int end = Math.min(moves.length, start + len);
         for (int i = start; i < end; i++) {
             int mv = moves[i];
             int p = powers[i];
             if (p == 0) break;
-            char face = Moves.MOVE_NAMES[mv].charAt(0);
-            int outPower = p;
-            if (face == 'U' || face == 'R' || face == 'F' || face == 'B') {
-                if (p == 1) outPower = 3; else if (p == 3) outPower = 1;
-            }
-            sb.append(face);
-            if (outPower == 2) sb.append('2');
-            else if (outPower == 3) sb.append('\'');
-            if (i < end - 1) sb.append(' ');
+            if (prog.length() > 0) prog.append(' ');
+            prog.append(Moves.moveToString(mv, p));
         }
-        return sb.toString();
+        // convert program-format to user-format using existing helper to ensure consistent notation
+        return programToUser(prog.toString());
     }
 
     private static int faceToMove(char f) {
@@ -126,6 +128,10 @@ public class Solver {
         }
         return out.toString();
     }
+
+    // Public helpers used by other test/driver classes
+    public static char[] parseNetForVerify(List<String> n) { return parseNet(n); }
+    public static String programToUserPublic(String seq) { return programToUser(seq); }
 
     private static char[] parseNet(List<String> n) {
         char[] f = new char[54];

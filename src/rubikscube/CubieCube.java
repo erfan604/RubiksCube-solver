@@ -227,6 +227,85 @@ public class CubieCube {
         for (int i = 0; i < 8; i++) cp[i] = (byte)perm[i];
     }
 
+    // U-layer edges (UR,UF,UL,UB) and D-layer edges (DR,DF,DL,DB)
+    private static final int[] U_EDGE_IDX = {UR, UF, UL, UB};
+    private static final int[] D_EDGE_IDX = {DR, DF, DL, DB};
+
+    private int permCoord4(int[] perm) {
+        int coord = 0;
+        boolean[] used = new boolean[4];
+        for (int i = 0; i < 4; i++) {
+            int v = perm[i];
+            int smaller = 0;
+            for (int j = 0; j < v; j++) if (!used[j]) smaller++;
+            coord = coord * (4 - i) + smaller;
+            used[v] = true;
+        }
+        return coord;
+    }
+
+    private void setPerm4(int coord, int[] out) {
+        boolean[] used = new boolean[4];
+        int[] fact = {1,1,2,6,24};
+        int rem = coord;
+        for (int i = 0; i < 4; i++) {
+            int div = fact[3 - i];
+            int index = rem / div; rem %= div;
+            int j = 0, cnt = 0;
+            while (true) {
+                if (!used[j]) {
+                    if (cnt == index) break;
+                    cnt++;
+                }
+                j++;
+            }
+            out[i] = j;
+            used[j] = true;
+        }
+    }
+
+    public int getUEdgePermCoord() {
+        int[] perm = new int[4];
+        // assume phase-2: U-layer edges occupy positions 0..3
+        for (int i = 0; i < 4; i++) {
+            int e = ep[i]; // piece at UR/UF/UL/UB
+            if (e < 0 || e > 3) return 0; // invalid for phase-2
+            perm[i] = e;
+        }
+        return permCoord4(perm);
+    }
+
+    public void setUEdgePermCoord(int coord) {
+        byte[] solved = {UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR};
+        System.arraycopy(solved, 0, ep, 0, ep.length);
+        int[] perm = new int[4];
+        setPerm4(coord, perm);
+        for (int i = 0; i < 4; i++) ep[i] = (byte)perm[i];
+    }
+
+    public static CubieCube fromUEdgePermCoord(int coord) { CubieCube c = new CubieCube(); c.setUEdgePermCoord(coord); return c; }
+
+    public int getDEdgePermCoord() {
+        int[] perm = new int[4];
+        // phase-2: D-layer edges occupy positions 4..7
+        for (int i = 0; i < 4; i++) {
+            int e = ep[4 + i];
+            if (e < 4 || e > 7) return 0;
+            perm[i] = e - 4;
+        }
+        return permCoord4(perm);
+    }
+
+    public void setDEdgePermCoord(int coord) {
+        byte[] solved = {UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR};
+        System.arraycopy(solved, 0, ep, 0, ep.length);
+        int[] perm = new int[4];
+        setPerm4(coord, perm);
+        for (int i = 0; i < 4; i++) ep[i + 4] = (byte)(perm[i] + 4);
+    }
+
+    public static CubieCube fromDEdgePermCoord(int coord) { CubieCube c = new CubieCube(); c.setDEdgePermCoord(coord); return c; }
+
     // factories
     public static CubieCube fromCornerOriCoord(int coord) { CubieCube c = new CubieCube(); c.setCornerOriCoord(coord); return c; }
     public static CubieCube fromEdgeOriCoord(int coord) { CubieCube c = new CubieCube(); c.setEdgeOriCoord(coord); return c; }
