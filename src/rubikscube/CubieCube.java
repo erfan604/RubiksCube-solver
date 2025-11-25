@@ -228,9 +228,6 @@ public class CubieCube {
         for (int i = 0; i < 8; i++) cp[i] = (byte)perm[i];
     }
 
-    // U-layer edges (UR,UF,UL,UB) and D-layer edges (DR,DF,DL,DB)
-    private static final int[] U_EDGE_IDX = {UR, UF, UL, UB};
-    private static final int[] D_EDGE_IDX = {DR, DF, DL, DB};
 
     private int permCoord4(int[] perm) {
         int coord = 0;

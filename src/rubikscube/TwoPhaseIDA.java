@@ -27,11 +27,14 @@ public class TwoPhaseIDA {
     // diagnostic toggles: allow temporarily ignoring EO or SLICE in phase-1 heuristic
     public static boolean IGNORE_EO_IN_H1 = false;
     public static boolean IGNORE_SLICE_IN_H1 = false;
+    // Reduce stderr spam unless explicitly enabled
+    public static boolean LOG_PHASE2_FAILS = false;
+    public static boolean LOG_SOLUTION_DETAILS = false;
 
     public String solve(CubieCube start) {
         // Ensure move/coord tables and pruning tables are ready
         MoveTables.init();
-        PruningTables.initAsyncStart();
+        LightPruningTables.buildAllBlocking();
 
         // keep a copy of original start for diagnostics
         this.startCube = new CubieCube(start);
@@ -104,66 +107,70 @@ public class TwoPhaseIDA {
         String sol = sb.toString();
 
         // Diagnostic: print program-format and user-format and reversed+inverted form for verification
-        try {
-            System.err.println("TwoPhase: program-format solution: " + sol);
-            String userForm = Solver.programToUserPublic(sol);
-            System.err.println("TwoPhase: user-format solution: " + userForm);
-            // build reversed+inverted program-format
-            StringBuilder rev = new StringBuilder();
-            for (int i = total - 1; i >= 0; i--) {
-                int mv = solutionMoves[i]; int pw = solutionPowers[i];
-                int invPw = (pw == 2) ? 2 : (pw == 1 ? 3 : 1);
-                if (rev.length() > 0) rev.append(' ');
-                rev.append(Moves.moveToString(mv, invPw));
-            }
-            System.err.println("TwoPhase: reversed+inverted program-format: " + rev.toString());
-            System.err.println("TwoPhase: reversed+inverted user-format: " + Solver.programToUserPublic(rev.toString()));
-        } catch (Throwable t) { /* ignore */ }
+        if (LOG_SOLUTION_DETAILS) {
+            try {
+                System.err.println("TwoPhase: program-format solution: " + sol);
+                String userForm = Solver.programToUserPublic(sol);
+                System.err.println("TwoPhase: user-format solution: " + userForm);
+                // build reversed+inverted program-format
+                StringBuilder rev = new StringBuilder();
+                for (int i = total - 1; i >= 0; i--) {
+                    int mv = solutionMoves[i]; int pw = solutionPowers[i];
+                    int invPw = (pw == 2) ? 2 : (pw == 1 ? 3 : 1);
+                    if (rev.length() > 0) rev.append(' ');
+                    rev.append(Moves.moveToString(mv, invPw));
+                }
+                System.err.println("TwoPhase: reversed+inverted program-format: " + rev.toString());
+                System.err.println("TwoPhase: reversed+inverted user-format: " + Solver.programToUserPublic(rev.toString()));
+            } catch (Throwable t) { /* ignore */ }
+        }
 
         // verify assembled solution
         CubieCube test = new CubieCube(start);
         for (int i = 0; i < total; i++) test.applyMove(solutionMoves[i], solutionPowers[i]);
         if (!test.isSolved()) {
-            // diagnostic output to stderr for debugging assembly/coord mismatch
-            System.err.println("TwoPhase assembled solution failed final verification — dumping diagnostics");
-            System.err.println("phase1Length=" + phase1Length + " phase2Length=" + phase2Length + " total=" + total);
-            System.err.println("SolutionMoves: " + Arrays.toString(Arrays.copyOf(solutionMoves, total)));
-            System.err.println("SolutionPowers: " + Arrays.toString(Arrays.copyOf(solutionPowers, total)));
+            if (LOG_PHASE2_FAILS) {
+                // diagnostic output to stderr for debugging assembly/coord mismatch
+                System.err.println("TwoPhase assembled solution failed final verification — dumping diagnostics");
+                System.err.println("phase1Length=" + phase1Length + " phase2Length=" + phase2Length + " total=" + total);
+                System.err.println("SolutionMoves: " + Arrays.toString(Arrays.copyOf(solutionMoves, total)));
+                System.err.println("SolutionPowers: " + Arrays.toString(Arrays.copyOf(solutionPowers, total)));
 
-            int pco = start.getCornerOriCoord();
-            int peo = start.getEdgeOriCoord();
-            int psl = start.getUDSliceCoord();
-            int pcp = start.getCornerPermCoord();
-            CubieCube actual = new CubieCube(start);
+                int pco = start.getCornerOriCoord();
+                int peo = start.getEdgeOriCoord();
+                int psl = start.getUDSliceCoord();
+                int pcp = start.getCornerPermCoord();
+                CubieCube actual = new CubieCube(start);
 
-            System.err.println("Step | mv pw | predCO predEO predSL predCP || actCO actEO actSL actCP");
-            for (int i = 0; i < total; i++) {
-                int mv = solutionMoves[i]; int pw = solutionPowers[i];
-                pco = MoveTables.applyCO(mv, pw, pco);
-                peo = MoveTables.applyEO(mv, pw, peo);
-                psl = MoveTables.applySlice(mv, pw, psl);
-                pcp = MoveTables.applyCP(mv, pw, pcp);
-                actual.applyMove(mv, pw);
-                int aco = actual.getCornerOriCoord();
-                int aeo = actual.getEdgeOriCoord();
-                int asl = actual.getUDSliceCoord();
-                int acp = actual.getCornerPermCoord();
-                System.err.printf("%3d | %2d %1d | %6d %6d %6d %6d || %6d %6d %6d %6d\n", i, mv, pw, pco, peo, psl, pcp, aco, aeo, asl, acp);
+                System.err.println("Step | mv pw | predCO predEO predSL predCP || actCO actEO actSL actCP");
+                for (int i = 0; i < total; i++) {
+                    int mv = solutionMoves[i]; int pw = solutionPowers[i];
+                    pco = MoveTables.applyCO(mv, pw, pco);
+                    peo = MoveTables.applyEO(mv, pw, peo);
+                    psl = MoveTables.applySlice(mv, pw, psl);
+                    pcp = MoveTables.applyCP(mv, pw, pcp);
+                    actual.applyMove(mv, pw);
+                    int aco = actual.getCornerOriCoord();
+                    int aeo = actual.getEdgeOriCoord();
+                    int asl = actual.getUDSliceCoord();
+                    int acp = actual.getCornerPermCoord();
+                    System.err.printf("%3d | %2d %1d | %6d %6d %6d %6d || %6d %6d %6d %6d\n", i, mv, pw, pco, peo, psl, pcp, aco, aeo, asl, acp);
+                }
+
+                System.err.println("Final assembled cube differs:");
+                System.err.print("final cp: "); for (int i=0;i<8;i++) System.err.print(test.cp[i] + " "); System.err.println();
+                System.err.print("final co: "); for (int i=0;i<8;i++) System.err.print(test.co[i] + " "); System.err.println();
+                System.err.print("final ep: "); for (int i=0;i<12;i++) System.err.print(test.ep[i] + " "); System.err.println();
+                System.err.print("final eo: "); for (int i=0;i<12;i++) System.err.print(test.eo[i] + " "); System.err.println();
+
+                System.err.println("Mid-cube (after phase1):");
+                CubieCube midDump = new CubieCube(start);
+                for (int i = 0; i < phase1Length; i++) midDump.applyMove(solutionMoves[i], solutionPowers[i]);
+                System.err.print("mid cp: "); for (int i=0;i<8;i++) System.err.print(midDump.cp[i] + " "); System.err.println();
+                System.err.print("mid co: "); for (int i=0;i<8;i++) System.err.print(midDump.co[i] + " "); System.err.println();
+                System.err.print("mid ep: "); for (int i=0;i<12;i++) System.err.print(midDump.ep[i] + " "); System.err.println();
+                System.err.print("mid eo: "); for (int i=0;i<12;i++) System.err.print(midDump.eo[i] + " "); System.err.println();
             }
-
-            System.err.println("Final assembled cube differs:");
-            System.err.print("final cp: "); for (int i=0;i<8;i++) System.err.print(test.cp[i] + " "); System.err.println();
-            System.err.print("final co: "); for (int i=0;i<8;i++) System.err.print(test.co[i] + " "); System.err.println();
-            System.err.print("final ep: "); for (int i=0;i<12;i++) System.err.print(test.ep[i] + " "); System.err.println();
-            System.err.print("final eo: "); for (int i=0;i<12;i++) System.err.print(test.eo[i] + " "); System.err.println();
-
-            System.err.println("Mid-cube (after phase1):");
-            CubieCube midDump = new CubieCube(start);
-            for (int i = 0; i < phase1Length; i++) midDump.applyMove(solutionMoves[i], solutionPowers[i]);
-            System.err.print("mid cp: "); for (int i=0;i<8;i++) System.err.print(midDump.cp[i] + " "); System.err.println();
-            System.err.print("mid co: "); for (int i=0;i<8;i++) System.err.print(midDump.co[i] + " "); System.err.println();
-            System.err.print("mid ep: "); for (int i=0;i<12;i++) System.err.print(midDump.ep[i] + " "); System.err.println();
-            System.err.print("mid eo: "); for (int i=0;i<12;i++) System.err.print(midDump.eo[i] + " "); System.err.println();
 
             return "";
         }
@@ -180,32 +187,27 @@ public class TwoPhaseIDA {
 
     // ---------------- heuristics using coord tables ----------------
     private int heuristicPhase1Coord(int co, int eo, int sl) {
-        int hCo = IGNORE_EO_IN_H1 ? 0 : PruningTables.coPrun[co];
-        int hEo = IGNORE_EO_IN_H1 ? 0 : PruningTables.eoPrun[eo];
-        int hSl = IGNORE_SLICE_IN_H1 ? 0 : PruningTables.slicePrun[sl];
+        int hCo = IGNORE_EO_IN_H1 ? 0 : LightPruningTables.coSlicePrun[co * LightPruningTables.N_SLICE + sl];
+        int hEo = IGNORE_EO_IN_H1 ? 0 : LightPruningTables.eoSlicePrun[eo * LightPruningTables.N_SLICE + sl];
         if (hCo < 0) hCo = 0;
         if (hEo < 0) hEo = 0;
-        if (hSl < 0) hSl = 0;
-        return Math.max(Math.max(hCo, hEo), hSl);
+        // We ignore slice-only table here since slice is already part of the paired lookups.
+        return Math.max(hCo, hEo);
     }
 
     private int heuristicPhase2Coord(int cp, int sl, int udEp, int ue, int de) {
-        // phase-2 heuristic: combine CP/UD parity + slice, full CPxUDxSlice parity, and the sub-perms of U/D edges
-        int hCpUd = PruningTables.cpUdPrun[cp * 2 + (PruningTables.udParity[udEp] & 1)];
-        int hCpSl = PruningTables.cpSlicePrun2[cp * PruningTables.N_SLICE + sl];
-        int hCpUdSl = PruningTables.cpUdSliceFull[((cp * PruningTables.N_SLICE) + sl) * 2 + (PruningTables.udParity[udEp] & 1)];
-        int hUd = PruningTables.udEp2Prun[udEp];
-        int hUe = PruningTables.uEdgePrun[ue];
-        int hDe = PruningTables.dEdgePrun[de];
+        // phase-2 heuristic: combine CP and UD-edge pruning, plus small U/D edge perms for extra guidance
+        int hCp = LightPruningTables.cpPrunP2[cp];
+        int hUd = LightPruningTables.udPrunP2[udEp];
+        int hUe = LightPruningTables.uEdgePrun[ue];
+        int hDe = LightPruningTables.dEdgePrun[de];
 
-        if (hCpUd < 0) hCpUd = 0;
-        if (hCpSl < 0) hCpSl = 0;
-        if (hCpUdSl < 0) hCpUdSl = 0;
+        if (hCp < 0) hCp = 0;
         if (hUd < 0) hUd = 0;
         if (hUe < 0) hUe = 0;
         if (hDe < 0) hDe = 0;
 
-        return Math.max(Math.max(Math.max(hCpUd, hCpSl), hCpUdSl), Math.max(Math.max(hUd, hUe), hDe));
+        return Math.max(Math.max(hCp, hUd), Math.max(hUe, hDe));
     }
 
     // ---------------- phase-1 search using coordinates ----------------
@@ -276,18 +278,20 @@ public class TwoPhaseIDA {
                 assembled.applyMove(solutionMoves[idx], solutionPowers[idx]);
             }
             if (!assembled.isSolved()) {
-                // Dump diagnostics for this coord-consistent but assembled-invalid candidate
-                System.err.println("TwoPhaseIDA: coord-consistent candidate failed assembled verification (phase2 depth=" + depth + ")");
-                System.err.println("phase1Length=" + phase1Length + " currentDepth=" + depth + " limit=" + limit);
-                System.err.print("mid cp: "); CubieCube midDump = new CubieCube(startCube); for (int i=0;i<phase1Length;i++){ midDump.applyMove(solutionMoves[i], solutionPowers[i]); } for (int j=0;j<8;j++) System.err.print(midDump.cp[j] + " "); System.err.println();
-                System.err.print("mid co: "); for (int j=0;j<8;j++) System.err.print(midDump.co[j] + " "); System.err.println();
-                System.err.print("mid ep: "); for (int j=0;j<12;j++) System.err.print(midDump.ep[j] + " "); System.err.println();
-                System.err.print("mid eo: "); for (int j=0;j<12;j++) System.err.print(midDump.eo[j] + " "); System.err.println();
-                System.err.print("candidate phase2 moves: "); for (int i=0;i<depth;i++){ int idx=phase1Length+i; System.err.print(Moves.moveToString(solutionMoves[idx], solutionPowers[idx]) + " "); } System.err.println();
-                System.err.print("assembled cp: "); for (int j=0;j<8;j++) System.err.print(assembled.cp[j] + " "); System.err.println();
-                System.err.print("assembled co: "); for (int j=0;j<8;j++) System.err.print(assembled.co[j] + " "); System.err.println();
-                System.err.print("assembled ep: "); for (int j=0;j<12;j++) System.err.print(assembled.ep[j] + " "); System.err.println();
-                System.err.print("assembled eo: "); for (int j=0;j<12;j++) System.err.print(assembled.eo[j] + " "); System.err.println();
+                if (LOG_PHASE2_FAILS) {
+                    // Dump diagnostics for this coord-consistent but assembled-invalid candidate
+                    System.err.println("TwoPhaseIDA: coord-consistent candidate failed assembled verification (phase2 depth=" + depth + ")");
+                    System.err.println("phase1Length=" + phase1Length + " currentDepth=" + depth + " limit=" + limit);
+                    System.err.print("mid cp: "); CubieCube midDump = new CubieCube(startCube); for (int i=0;i<phase1Length;i++){ midDump.applyMove(solutionMoves[i], solutionPowers[i]); } for (int j=0;j<8;j++) System.err.print(midDump.cp[j] + " "); System.err.println();
+                    System.err.print("mid co: "); for (int j=0;j<8;j++) System.err.print(midDump.co[j] + " "); System.err.println();
+                    System.err.print("mid ep: "); for (int j=0;j<12;j++) System.err.print(midDump.ep[j] + " "); System.err.println();
+                    System.err.print("mid eo: "); for (int j=0;j<12;j++) System.err.print(midDump.eo[j] + " "); System.err.println();
+                    System.err.print("candidate phase2 moves: "); for (int i=0;i<depth;i++){ int idx=phase1Length+i; System.err.print(Moves.moveToString(solutionMoves[idx], solutionPowers[idx]) + " "); } System.err.println();
+                    System.err.print("assembled cp: "); for (int j=0;j<8;j++) System.err.print(assembled.cp[j] + " "); System.err.println();
+                    System.err.print("assembled co: "); for (int j=0;j<8;j++) System.err.print(assembled.co[j] + " "); System.err.println();
+                    System.err.print("assembled ep: "); for (int j=0;j<12;j++) System.err.print(assembled.ep[j] + " "); System.err.println();
+                    System.err.print("assembled eo: "); for (int j=0;j<12;j++) System.err.print(assembled.eo[j] + " "); System.err.println();
+                }
                 // do not accept this candidate; continue searching
                 return false;
             }
@@ -338,9 +342,6 @@ public class TwoPhaseIDA {
         return false;
     }
 
-    // ---------------- rest unchanged ----------------
-    private int heuristicPhase1(CubieCube c) { return heuristicPhase1Coord(c.getCornerOriCoord(), c.getEdgeOriCoord(), c.getUDSliceCoord()); }
-    private int heuristicPhase2(CubieCube c) { return heuristicPhase2Coord(c.getCornerPermCoord(), c.getUDSliceCoord(), c.getUDEdgePermCoord(), c.getUEdgePermCoord(), c.getDEdgePermCoord()); }
 
     // diagnostic helper to print coords and raw arrays for the mid state
     private void dumpMidState(CubieCube mid) {

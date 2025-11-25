@@ -16,8 +16,8 @@ public class Solver {
      */
     public static void main(String[] args) {
         MoveTables.init();
-        // build tables fresh in-memory; no cache saved to avoid large files
-        PruningTables.buildAllBlocking();
+        // build light in-memory tables each run (no disk cache)
+        LightPruningTables.buildAllBlocking();
 
         if (args.length < 2) {
             solveBatch();
@@ -48,6 +48,7 @@ public class Solver {
         ExecutorService exec = Executors.newSingleThreadExecutor();
         try {
             for (int i = 1; i <= 40; i++) {
+                long t0 = System.nanoTime();
                 String scrambleFile = String.format("testcases/scramble%02d.txt", i);
                 String outFile = String.format("solution%02d.txt", i);
                 String userSolution = "";
@@ -76,10 +77,11 @@ public class Solver {
                 } catch (Exception e) {
                     userSolution = "";
                 }
+                double elapsedSec = (System.nanoTime() - t0) / 1_000_000_000.0;
                 try {
                     Files.write(Paths.get(outFile), Arrays.asList(userSolution));
                 } catch (Exception ignored) { }
-                System.out.println(String.format("scramble%02d: %s", i, userSolution.isEmpty() ? "<no solution>" : userSolution));
+                System.out.println(String.format("scramble%02d: %s (%.3fs)", i, userSolution.isEmpty() ? "<no solution>" : userSolution, elapsedSec));
             }
         } finally {
             exec.shutdownNow();
@@ -109,25 +111,6 @@ public class Solver {
         }
     }
 
-    private static String buildUserFromMoves(int[] moves, int[] powers, int start, int len) {
-        if (moves == null || powers == null || len <= 0) return "";
-        StringBuilder prog = new StringBuilder();
-        int end = Math.min(moves.length, start + len);
-        for (int i = start; i < end; i++) {
-            int mv = moves[i];
-            int p = powers[i];
-            if (p == 0) break;
-            if (prog.length() > 0) prog.append(' ');
-            prog.append(Moves.moveToString(mv, p));
-        }
-        // convert program-format to user-format using existing helper to ensure consistent notation
-        return programToUser(prog.toString());
-    }
-
-    private static int faceToMove(char f) {
-        switch (f) { case 'U': return Moves.U; case 'R': return Moves.R; case 'F': return Moves.F; case 'D': return Moves.D; case 'L': return Moves.L; case 'B': return Moves.B; }
-        return -1;
-    }
 
     // convert program-format seq to user-format (no special inversion)
     private static String programToUser(String seq) {
