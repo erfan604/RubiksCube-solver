@@ -25,6 +25,9 @@ public class LightPruningTables {
     public static final byte[] udPrunP2 = new byte[N_UD_EP];
     public static final byte[] uEdgePrun = new byte[24];
     public static final byte[] dEdgePrun = new byte[24];
+    public static final byte[] cpUdParityPrun = new byte[N_CP * 2];
+    public static final byte[] cpSlicePrunP2 = new byte[N_CP * N_SLICE];
+    public static final byte[] cpUdSlicePrunP2 = new byte[N_CP * N_SLICE * 2];
 
     private static volatile boolean initialized = false;
 
@@ -35,6 +38,9 @@ public class LightPruningTables {
         buildEoSlice();
         buildCpP2();
         buildUdP2();
+        buildCpUdParity();
+        buildCpSliceP2();
+        buildCpUdSliceP2();
         buildUEdge();
         buildDEdge();
         initialized = true;
@@ -123,6 +129,122 @@ public class LightPruningTables {
                         if (cpPrunP2[ncp] == -1) {
                             cpPrunP2[ncp] = (byte)(depth + 1);
                             next.add(ncp);
+                        }
+                    }
+                }
+            }
+            q = next;
+            depth++;
+        }
+    }
+
+    public static int permParityFromCoord(int coord) {
+        int parity = 0;
+        int[] fact = {1,1,2,6,24,120,720,5040,40320};
+        int rem = coord; boolean[] used = new boolean[8];
+        for (int i = 0; i < 8; i++) {
+            int div = fact[7 - i];
+            int index = rem / div; rem %= div;
+            int cnt = 0, j = 0;
+            while (true) {
+                if (!used[j]) {
+                    if (cnt == index) break;
+                    cnt++;
+                }
+                j++;
+            }
+            used[j] = true;
+            parity ^= index & 1;
+        }
+        return parity & 1;
+    }
+
+    private static void buildCpUdParity() {
+        Arrays.fill(cpUdParityPrun, (byte)-1);
+        cpUdParityPrun[0] = 0;
+        ArrayDeque<int[]> q = new ArrayDeque<>();
+        q.add(new int[]{0, 0}); // cp, ud parity
+        int depth = 0;
+        while (!q.isEmpty()) {
+            ArrayDeque<int[]> next = new ArrayDeque<>();
+            while (!q.isEmpty()) {
+                int[] cur = q.remove();
+                int cp = cur[0], ud = cur[1];
+                for (int m = 0; m < 6; m++) {
+                    boolean isUD = (m == Moves.U || m == Moves.D);
+                    for (int p = 1; p <= 3; p++) {
+                        if (!isUD && p != 2) continue;
+                        int ncp = MoveTables.applyCP(m, p, cp);
+                        int nud = MoveTables.applyUDEP(m, p, ud);
+                        int parity = permParityFromCoord(nud);
+                        int key = ncp * 2 + parity;
+                        if (cpUdParityPrun[key] == -1) {
+                            cpUdParityPrun[key] = (byte)(depth + 1);
+                            next.add(new int[]{ncp, nud});
+                        }
+                    }
+                }
+            }
+            q = next;
+            depth++;
+        }
+    }
+
+    private static void buildCpSliceP2() {
+        Arrays.fill(cpSlicePrunP2, (byte)-1);
+        int startKey = 0 * N_SLICE + CubieCube.SLICE_SOLVED_COORD;
+        cpSlicePrunP2[startKey] = 0;
+        ArrayDeque<int[]> q = new ArrayDeque<>();
+        q.add(new int[]{0, CubieCube.SLICE_SOLVED_COORD}); // cp, slice
+        int depth = 0;
+        while (!q.isEmpty()) {
+            ArrayDeque<int[]> next = new ArrayDeque<>();
+            while (!q.isEmpty()) {
+                int[] cur = q.remove();
+                int cp = cur[0], sl = cur[1];
+                for (int m = 0; m < 6; m++) {
+                    boolean isUD = (m == Moves.U || m == Moves.D);
+                    for (int p = 1; p <= 3; p++) {
+                        if (!isUD && p != 2) continue;
+                        int ncp = MoveTables.applyCP(m, p, cp);
+                        int nsl = MoveTables.applySlice(m, p, sl);
+                        int key = ncp * N_SLICE + nsl;
+                        if (cpSlicePrunP2[key] == -1) {
+                            cpSlicePrunP2[key] = (byte)(depth + 1);
+                            next.add(new int[]{ncp, nsl});
+                        }
+                    }
+                }
+            }
+            q = next;
+            depth++;
+        }
+    }
+
+    private static void buildCpUdSliceP2() {
+        Arrays.fill(cpUdSlicePrunP2, (byte)-1);
+        int startKey = ((0 * N_SLICE) + CubieCube.SLICE_SOLVED_COORD) * 2 + 0;
+        cpUdSlicePrunP2[startKey] = 0;
+        ArrayDeque<int[]> q = new ArrayDeque<>();
+        q.add(new int[]{0, CubieCube.SLICE_SOLVED_COORD, 0}); // cp, slice, udEp
+        int depth = 0;
+        while (!q.isEmpty()) {
+            ArrayDeque<int[]> next = new ArrayDeque<>();
+            while (!q.isEmpty()) {
+                int[] cur = q.remove();
+                int cp = cur[0], sl = cur[1], ud = cur[2];
+                for (int m = 0; m < 6; m++) {
+                    boolean isUD = (m == Moves.U || m == Moves.D);
+                    for (int p = 1; p <= 3; p++) {
+                        if (!isUD && p != 2) continue;
+                        int ncp = MoveTables.applyCP(m, p, cp);
+                        int nsl = MoveTables.applySlice(m, p, sl);
+                        int nud = MoveTables.applyUDEP(m, p, ud);
+                        int parity = permParityFromCoord(nud) & 1;
+                        int key = ((ncp * N_SLICE) + nsl) * 2 + parity;
+                        if (cpUdSlicePrunP2[key] == -1) {
+                            cpUdSlicePrunP2[key] = (byte)(depth + 1);
+                            next.add(new int[]{ncp, nsl, nud});
                         }
                     }
                 }

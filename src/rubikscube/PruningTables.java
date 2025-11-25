@@ -1,7 +1,5 @@
 package rubikscube;
 
-import java.io.*;
-import java.nio.file.*;
 import java.util.*;
 
 /**
@@ -41,19 +39,11 @@ public class PruningTables {
     public static volatile boolean initialized = false;
     private static volatile boolean started = false;
 
-    private static final String CACHE_FILE = "pbt.cache";
-    private static final byte[] MAGIC = new byte[] { 'P', 'B', 'T', 11 };
-
     // ---------- build control ----------
     public static synchronized void initAsyncStart() {
         if (started) return;
         started = true;
         MoveTables.init();
-        if (loadFromDisk()) {
-            for (int i = 0; i < N_UD_EP; i++) udParity[i] = (byte)permParityFromCoord(i);
-            initialized = true;
-            return;
-        }
         resetArrays();
         prioritizedBuildLoop();
         initialized = true;
@@ -61,13 +51,6 @@ public class PruningTables {
 
     public static synchronized void buildAllBlocking() {
         if (initialized) return;
-        if (started) {
-            long t0 = System.currentTimeMillis();
-            while (!initialized && System.currentTimeMillis() - t0 < 120_000) {
-                try { Thread.sleep(200); } catch (InterruptedException ignored) {}
-            }
-            if (initialized) return;
-        }
         started = true;
         MoveTables.init();
         resetArrays();
@@ -98,45 +81,6 @@ public class PruningTables {
         cpUdSlicePrun[((0 * N_SLICE) + SLICE_SOLVED) * 2 + 0] = 0;
         cpUdSliceFull[((0 * N_SLICE) + SLICE_SOLVED) * 2 + 0] = 0;
         uEdgePrun[0] = dEdgePrun[0] = 0;
-    }
-
-    // ---------- cache I/O ----------
-    public static synchronized void saveToDisk() {
-        try (DataOutputStream dos = new DataOutputStream(Files.newOutputStream(Paths.get(CACHE_FILE)))) {
-            dos.write(MAGIC);
-            dos.writeInt(N_CO); dos.writeInt(N_EO); dos.writeInt(N_SLICE); dos.writeInt(N_CP); dos.writeInt(N_UD_EP);
-            dos.writeInt(N_CP); dos.writeInt(N_UD_EP); dos.writeInt(N_CP_UD); dos.writeInt(N_CP_SLICE); dos.writeInt(N_CP_UD_SLICE);
-            dos.writeInt(24); dos.writeInt(24);
-            dos.write(coPrun); dos.write(eoPrun); dos.write(slicePrun); dos.write(cpPrun); dos.write(udEpPrun);
-            dos.write(cp2Prun); dos.write(udEp2Prun); dos.write(cpUdPrun); dos.write(cpSlicePrun2); dos.write(cpUdSlicePrun);
-            dos.write(uEdgePrun); dos.write(dEdgePrun);
-        } catch (IOException e) {
-            System.err.println("Failed to save PBT cache: " + e.getMessage());
-        }
-    }
-
-    public static synchronized boolean loadFromDisk() {
-        Path p = Paths.get(CACHE_FILE);
-        if (!Files.exists(p)) return false;
-        try (DataInputStream dis = new DataInputStream(Files.newInputStream(p))) {
-            byte[] magic = new byte[MAGIC.length];
-            dis.readFully(magic);
-            if (!Arrays.equals(magic, MAGIC)) return false;
-            int nco = dis.readInt(), neo = dis.readInt(), nsl = dis.readInt(), ncp = dis.readInt(), nud = dis.readInt();
-            int ncp2 = dis.readInt(), nud2 = dis.readInt(), ncpu = dis.readInt(), ncpsl = dis.readInt(), ncpudsl = dis.readInt();
-            int nue = dis.readInt(), nde = dis.readInt();
-            if (nco!=N_CO||neo!=N_EO||nsl!=N_SLICE||ncp!=N_CP||nud!=N_UD_EP||ncp2!=N_CP||nud2!=N_UD_EP
-                    ||ncpu!=N_CP_UD||ncpsl!=N_CP_SLICE||ncpudsl!=N_CP_UD_SLICE||nue!=24||nde!=24) return false;
-            dis.readFully(coPrun); dis.readFully(eoPrun); dis.readFully(slicePrun); dis.readFully(cpPrun); dis.readFully(udEpPrun);
-            dis.readFully(cp2Prun); dis.readFully(udEp2Prun); dis.readFully(cpUdPrun); dis.readFully(cpSlicePrun2); dis.readFully(cpUdSlicePrun);
-            dis.readFully(uEdgePrun); dis.readFully(dEdgePrun);
-            for (int i = 0; i < N_UD_EP; i++) udParity[i] = (byte)permParityFromCoord(i);
-            initialized = started = true;
-            return true;
-        } catch (IOException e) {
-            System.err.println("Failed to load PBT cache: " + e.getMessage());
-            return false;
-        }
     }
 
     // ---------- builders ----------
