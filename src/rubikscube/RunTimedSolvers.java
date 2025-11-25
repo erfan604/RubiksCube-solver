@@ -57,8 +57,6 @@ public class RunTimedSolvers {
                 if (bruteSol != null) {
                     System.out.println("  Brute_solution: " + bruteSol);
                     System.out.println("  Brute_assembled_verified: " + verifyAndDump(bruteSol, cc));
-                    System.out.println();
-                    continue; // solved, skip TwoPhase
                 }
 
                 // run TwoPhase with remaining time budget

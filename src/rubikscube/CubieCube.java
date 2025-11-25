@@ -27,6 +27,7 @@ public class CubieCube {
     public static final int FL = 9;
     public static final int BL = 10;
     public static final int BR = 11;
+    public static final int SLICE_SOLVED_COORD = new CubieCube().getUDSliceCoord();
 
     // state
     public byte[] cp = new byte[8];
@@ -180,9 +181,9 @@ public class CubieCube {
         for (int i = 11; i >= 0 && r > 0; i--) {
             int comb = nCr(i, r);
             if (coord >= comb) {
-                coord -= comb;
                 ep[i] = (byte)(FR + placed);
                 placed++;
+                coord -= comb;
                 r--;
             }
         }

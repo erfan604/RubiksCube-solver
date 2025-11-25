@@ -6,11 +6,13 @@ public class TwoPhaseIDA {
 
     // keep a reasonable max depth for both phases
     private static final int MAX_DEPTH = 45;
+    private static final int SLICE_SOLVED = CubieCube.SLICE_SOLVED_COORD;
 
     private int[] solutionMoves = new int[ MAX_DEPTH * 2 ];
     private int[] solutionPowers = new int[ MAX_DEPTH * 2 ];
     private int phase1Length;
     private int phase2Length;
+    private Map<Long, Integer> phase2Visited = new HashMap<>();
 
     // preserve original start cube so phase-2 diagnostics can reconstruct mid-cube
     private CubieCube startCube = null;
@@ -43,7 +45,8 @@ public class TwoPhaseIDA {
         // Phase-1 iterative deepening on CO/EO/SLICE
         long tPhase1Start = System.nanoTime();
         boolean phase1Found = false;
-        for (int depth1 = 0; depth1 <= MAX_DEPTH; depth1++) {
+        int h1Start = heuristicPhase1Coord(startCO, startEO, startSL);
+        for (int depth1 = h1Start; depth1 <= MAX_DEPTH; depth1++) {
             if (Thread.currentThread().isInterrupted()) break;
             if (searchPhase1Coord(startCO, startEO, startSL, 0, depth1, -1)) {
                 phase1Found = true;
@@ -63,12 +66,14 @@ public class TwoPhaseIDA {
         long tPhase2Start = System.nanoTime();
         boolean phase2Found = false;
         phase2Length = 0;
+        phase2Visited.clear();
         int midCP = mid.getCornerPermCoord();
         int midSL = mid.getUDSliceCoord();
         int midUD = mid.getUDEdgePermCoord();
         int midUE = mid.getUEdgePermCoord();
         int midDE = mid.getDEdgePermCoord();
-        for (int depth2 = 0; depth2 <= MAX_DEPTH; depth2++) {
+        int h2Start = heuristicPhase2Coord(midCP, midSL, midUD, midUE, midDE);
+        for (int depth2 = h2Start; depth2 <= MAX_DEPTH; depth2++) {
             if (Thread.currentThread().isInterrupted()) break;
             if (searchPhase2Coord(midCP, midSL, midUD, midUE, midDE, 0, depth2, -1)) {
                 phase2Found = true;
@@ -78,7 +83,13 @@ public class TwoPhaseIDA {
         long tPhase2End = System.nanoTime();
         phase2TimeMs = (tPhase2End - tPhase2Start) / 1_000_000L;
 
-        if (!phase2Found) return "";
+        if (!phase2Found) {
+            // dump mid state diagnostics to help debug phase-2 failures
+            System.err.println("TwoPhase: phase-2 failed — dumping mid-state after phase-1");
+            dumpMidState(mid);
+            System.err.println("Phase1Length=" + phase1Length + " heuristicP2Start=" + h2Start);
+            return "";
+        }
 
         int total = phase1Length + phase2Length;
         // clear trailing entries
@@ -207,7 +218,7 @@ public class TwoPhaseIDA {
             return false;
         }
 
-        if (co == 0 && eo == 0 && sl == 0) {
+        if (co == 0 && eo == 0 && sl == SLICE_SOLVED) {
             phase1Length = depth;
             return true;
         }
@@ -215,7 +226,8 @@ public class TwoPhaseIDA {
         // generate moves with heuristic ordering
         ArrayList<MoveChoice> choices = new ArrayList<>();
         for (int move = 0; move < 6; move++) {
-            if (lastMove >= 0 && Moves.sameAxisFull(lastMove, move)) continue; // prune same-axis repeats
+            // relaxed: only block turning the same face twice in a row
+            if (lastMove >= 0 && Moves.sameAxis(lastMove, move)) continue;
             for (int p = 1; p <= 3; p++) {
                 int nco = MoveTables.applyCO(move, p, co);
                 int neo = MoveTables.applyEO(move, p, eo);
@@ -254,7 +266,7 @@ public class TwoPhaseIDA {
             return false;
         }
 
-         if (cp == 0 && sl == 0 && udEp == 0 && ue == 0 && de == 0) {
+         if (cp == 0 && sl == SLICE_SOLVED && udEp == 0 && ue == 0 && de == 0) {
             // Assemble full solution (phase1 + this phase2 prefix) and verify final cube
             // phase2 moves occupy indices [phase1Length .. phase1Length + depth - 1]
             CubieCube assembled = new CubieCube(startCube);
@@ -302,32 +314,41 @@ public class TwoPhaseIDA {
                 choices.add(new MoveChoice(move, p, nh, delta, preferUD));
             }
         }
-         choices.sort((a,b) -> {
-             if (a.h != b.h) return Integer.compare(a.h, b.h);
-             if (a.delta != b.delta) return Integer.compare(b.delta, a.delta);
-             if (a.preferUD != b.preferUD) return Boolean.compare(b.preferUD, a.preferUD);
-             if (a.move != b.move) return Integer.compare(a.move, b.move);
-             return Integer.compare(a.p, b.p);
-         });
+        choices.sort((a,b) -> {
+            if (a.h != b.h) return Integer.compare(a.h, b.h);
+            if (a.delta != b.delta) return Integer.compare(b.delta, a.delta);
+            if (a.preferUD != b.preferUD) return Boolean.compare(b.preferUD, a.preferUD);
+            if (a.move != b.move) return Integer.compare(a.move, b.move);
+            return Integer.compare(a.p, b.p);
+        });
 
-         for (MoveChoice mc : choices) {
-             if (Thread.currentThread().isInterrupted()) return false;
-             int ncp = MoveTables.applyCP(mc.move, mc.p, cp);
-             int nsl = MoveTables.applySlice(mc.move, mc.p, sl);
-             int nud = MoveTables.applyUDEP(mc.move, mc.p, udEp);
-             int nue = MoveTables.applyUEdge(mc.move, mc.p, ue);
-             int nde = MoveTables.applyDEdge(mc.move, mc.p, de);
-             int idx = phase1Length + depth;
-             solutionMoves[idx] = mc.move;
-             solutionPowers[idx] = mc.p;
-             if (searchPhase2Coord(ncp, nsl, nud, nue, nde, depth + 1, limit, mc.move)) return true;
-         }
+        for (MoveChoice mc : choices) {
+            if (Thread.currentThread().isInterrupted()) return false;
+            int ncp = MoveTables.applyCP(mc.move, mc.p, cp);
+            int nsl = MoveTables.applySlice(mc.move, mc.p, sl);
+            int nud = MoveTables.applyUDEP(mc.move, mc.p, udEp);
+            int nue = MoveTables.applyUEdge(mc.move, mc.p, ue);
+            int nde = MoveTables.applyDEdge(mc.move, mc.p, de);
+            int idx = phase1Length + depth;
+            solutionMoves[idx] = mc.move;
+            solutionPowers[idx] = mc.p;
+            if (searchPhase2Coord(ncp, nsl, nud, nue, nde, depth + 1, limit, mc.move)) return true;
+        }
 
-         return false;
-     }
+        return false;
+    }
 
     // ---------------- rest unchanged ----------------
     private int heuristicPhase1(CubieCube c) { return heuristicPhase1Coord(c.getCornerOriCoord(), c.getEdgeOriCoord(), c.getUDSliceCoord()); }
     private int heuristicPhase2(CubieCube c) { return heuristicPhase2Coord(c.getCornerPermCoord(), c.getUDSliceCoord(), c.getUDEdgePermCoord(), c.getUEdgePermCoord(), c.getDEdgePermCoord()); }
+
+    // diagnostic helper to print coords and raw arrays for the mid state
+    private void dumpMidState(CubieCube mid) {
+        System.err.println("  mid cp: " + mid.getCornerPermCoord() + " sl: " + mid.getUDSliceCoord() + " ud: " + mid.getUDEdgePermCoord() + " ue: " + mid.getUEdgePermCoord() + " de: " + mid.getDEdgePermCoord());
+        System.err.print("  mid cp arr: "); for (int i=0;i<8;i++) System.err.print(mid.cp[i] + " "); System.err.println();
+        System.err.print("  mid co arr: "); for (int i=0;i<8;i++) System.err.print(mid.co[i] + " "); System.err.println();
+        System.err.print("  mid ep arr: "); for (int i=0;i<12;i++) System.err.print(mid.ep[i] + " "); System.err.println();
+        System.err.print("  mid eo arr: "); for (int i=0;i<12;i++) System.err.print(mid.eo[i] + " "); System.err.println();
+    }
     private static class MoveChoice { int move; int p; int h; int delta; boolean preferUD; MoveChoice(int m, int p, int h) { this.move = m; this.p = p; this.h = h; this.delta = 0; this.preferUD = false; } MoveChoice(int m, int p, int h, int delta, boolean preferUD) { this.move = m; this.p = p; this.h = h; this.delta = delta; this.preferUD = preferUD; } }
 }

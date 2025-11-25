@@ -19,6 +19,7 @@ public class PruningTables {
     public static final int N_CP_UD = N_CP * 2;          // cp x UD parity
     public static final int N_CP_SLICE = N_CP * N_SLICE; // cp x slice
     public static final int N_CP_UD_SLICE = N_CP * N_SLICE * 2; // cp x slice x UD parity
+    private static final int SLICE_SOLVED = CubieCube.SLICE_SOLVED_COORD;
 
     public static final byte[] coPrun = new byte[N_CO];
     public static final byte[] eoPrun = new byte[N_EO];
@@ -90,8 +91,12 @@ public class PruningTables {
         Arrays.fill(dEdgePrun, (byte)-1);
         Arrays.fill(udParity, (byte)0);
 
-        coPrun[0] = eoPrun[0] = slicePrun[0] = cpPrun[0] = udEpPrun[0] = 0;
-        cp2Prun[0] = udEp2Prun[0] = cpUdPrun[0] = cpSlicePrun2[0] = cpUdSlicePrun[0] = cpUdSliceFull[0] = 0;
+        coPrun[0] = eoPrun[0] = cpPrun[0] = udEpPrun[0] = 0;
+        slicePrun[SLICE_SOLVED] = 0;
+        cp2Prun[0] = udEp2Prun[0] = cpUdPrun[0] = 0;
+        cpSlicePrun2[0 * N_SLICE + SLICE_SOLVED] = 0;
+        cpUdSlicePrun[((0 * N_SLICE) + SLICE_SOLVED) * 2 + 0] = 0;
+        cpUdSliceFull[((0 * N_SLICE) + SLICE_SOLVED) * 2 + 0] = 0;
         uEdgePrun[0] = dEdgePrun[0] = 0;
     }
 
@@ -185,7 +190,7 @@ public class PruningTables {
         }
     }
     private static void buildSlice() {
-        ArrayDeque<Integer> q = new ArrayDeque<>(); q.add(0); int depth = 0;
+        ArrayDeque<Integer> q = new ArrayDeque<>(); q.add(SLICE_SOLVED); int depth = 0;
         while (!q.isEmpty()) {
             depth++; ArrayDeque<Integer> next = new ArrayDeque<>();
             while (!q.isEmpty()) {
@@ -263,7 +268,7 @@ public class PruningTables {
     }
     private static void buildCPSlice2() {
         Arrays.fill(cpSlicePrun2,(byte)-1);
-        ArrayDeque<int[]> q=new ArrayDeque<>(); q.add(new int[]{0,0}); cpSlicePrun2[0]=0;
+        ArrayDeque<int[]> q=new ArrayDeque<>(); q.add(new int[]{0,SLICE_SOLVED}); cpSlicePrun2[0 * N_SLICE + SLICE_SOLVED]=0;
         int depth=0;
         while(!q.isEmpty()){
             depth++; ArrayDeque<int[]> next=new ArrayDeque<>();
@@ -282,7 +287,7 @@ public class PruningTables {
     }
     private static void buildCPUdSliceFull() {
         Arrays.fill(cpUdSliceFull,(byte)-1);
-        ArrayDeque<int[]> q=new ArrayDeque<>(); q.add(new int[]{0,0,0}); cpUdSliceFull[0]=0;
+        ArrayDeque<int[]> q=new ArrayDeque<>(); q.add(new int[]{0,SLICE_SOLVED,0}); cpUdSliceFull[((0 * N_SLICE) + SLICE_SOLVED) * 2 + 0]=0;
         int depth=0;
         while(!q.isEmpty()){
             depth++; ArrayDeque<int[]> next=new ArrayDeque<>();
