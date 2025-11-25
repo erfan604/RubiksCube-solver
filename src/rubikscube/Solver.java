@@ -6,85 +6,106 @@ import java.util.concurrent.*;
 
 public class Solver {
 
-    private static final int DEFAULT_SOLVER_TIMEOUT_SECONDS = 60;
+    private static final int DEFAULT_SOLVER_TIMEOUT_MS = 10_000;
+    private static final int BRUTE_MS = 1_000;
+    private static final int TWOPHASE_MS = 9_000;
 
+    /**
+     * If args are provided: args[0]=scramble file, args[1]=output file, optional args[2]=timeoutSeconds
+     * Batch mode (no args): solves testcases/scramble01..40 into solutionXX.txt with 10s per scramble.
+     */
     public static void main(String[] args) {
+        MoveTables.init();
+        // build tables fresh in-memory; no cache saved to avoid large files
+        PruningTables.buildAllBlocking();
 
-        if (args.length < 2) return;
+        if (args.length < 2) {
+            solveBatch();
+            return;
+        }
+
+        String inFile = args[0];
+        String outFile = args[1];
+        int timeoutMs = DEFAULT_SOLVER_TIMEOUT_MS;
+        if (args.length >= 3) {
+            try { timeoutMs = Integer.parseInt(args[2]) * 1000; } catch (Exception ignored) { }
+        }
 
         try {
-            List<String> lines = Files.readAllLines(Paths.get(args[0]));
+            List<String> lines = Files.readAllLines(Paths.get(inFile));
             char[] facelets = parseNet(lines);
-
             CubieCube cc = NetToCubie.fromFacelets(facelets);
-
-            // Ensure pruning tables available (build if needed)
-            boolean loaded = PruningTables.loadFromDisk();
-            if (!loaded) {
-                PruningTables.buildAllBlocking();
-                PruningTables.saveToDisk();
-            }
-
-            int timeoutSeconds = DEFAULT_SOLVER_TIMEOUT_SECONDS;
-            if (args.length >= 3) {
-                try { timeoutSeconds = Integer.parseInt(args[2]); } catch (Exception e) { /* ignore */ }
-            }
-
-            String sol = "";
-            long start = System.nanoTime();
-
-            long phase1Time = -1;
-            long phase2Time = -1;
-            String phase1Seq = "";
-            String phase2Seq = "";
-
-            // create TwoPhase instance here and reuse it so we can read lengths/moves after solving
-            TwoPhaseIDA twoPhase = new TwoPhaseIDA();
-            ExecutorService exec = Executors.newSingleThreadExecutor();
-            Future<String> fut = exec.submit(() -> twoPhase.solve(cc));
-
-            try {
-                sol = fut.get(timeoutSeconds, TimeUnit.SECONDS);
-            } catch (TimeoutException te) {
-                fut.cancel(true);
-                sol = "";
-            } catch (InterruptedException | ExecutionException e) {
-                fut.cancel(true);
-                sol = "";
-            } finally {
-                exec.shutdownNow();
-            }
-
-            // if solver returned a solution, extract phase info from the same instance
-            if (sol != null && !sol.isEmpty()) {
-                int p1len = twoPhase.getPhase1Length();
-                int p2len = twoPhase.getPhase2Length();
-                int[] moves = twoPhase.getSolutionMovesArray();
-                int[] powers = twoPhase.getSolutionPowersArray();
-                phase1Seq = buildUserFromMoves(moves, powers, 0, p1len);
-                phase2Seq = buildUserFromMoves(moves, powers, p1len, p2len);
-                phase1Time = twoPhase.getPhase1TimeMs();
-                phase2Time = twoPhase.getPhase2TimeMs();
-            }
-
-            long end = System.nanoTime();
-
-            long totalMs = (end - start) / 1_000_000;
-
-            String fullUser = (sol == null) ? "" : programToUser(sol);
-
-            List<String> out = new ArrayList<>();
-            out.add("PHASE1: " + (phase1Seq == null ? "" : phase1Seq));
-            out.add("PHASE1_TIME_MS: " + (phase1Time >= 0 ? phase1Time : ""));
-            out.add("PHASE2: " + (phase2Seq == null ? "" : phase2Seq));
-            out.add("PHASE2_TIME_MS: " + (phase2Time >= 0 ? phase2Time : ""));
-            out.add("FULL: " + (fullUser == null ? "" : fullUser));
-            out.add("FULL_TIME_MS: " + totalMs);
-
-            Files.write(Paths.get(args[1]), out);
-
+            String sol = solveOne(cc, timeoutMs);
+            String user = (sol == null || sol.isEmpty()) ? "" : programToUser(sol);
+            Files.write(Paths.get(outFile), Arrays.asList(user));
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    // Batch harness: testcases/scramble01..40 -> solutionXX.txt, 10s each (1s brute, 9s TwoPhase)
+    private static void solveBatch() {
+        ExecutorService exec = Executors.newSingleThreadExecutor();
+        try {
+            for (int i = 1; i <= 40; i++) {
+                String scrambleFile = String.format("testcases/scramble%02d.txt", i);
+                String outFile = String.format("solution%02d.txt", i);
+                String userSolution = "";
+                try {
+                    List<String> lines = Files.readAllLines(Paths.get(scrambleFile));
+                    CubieCube cc = NetToCubie.fromFacelets(parseNetForVerify(lines));
+
+                    // quick brute try
+                    FullBruteSolver brute = new FullBruteSolver();
+                    long bruteDeadline = System.currentTimeMillis() + BRUTE_MS;
+                    String bruteProg = brute.solve(new CubieCube(cc), 9, bruteDeadline);
+                    if (bruteProg != null && !bruteProg.isEmpty()) {
+                        userSolution = programToUser(bruteProg);
+                    } else {
+                        // TwoPhase with timeout
+                        Future<String> fut = exec.submit(() -> new TwoPhaseIDA().solve(new CubieCube(cc)));
+                        try {
+                            String prog = fut.get(TWOPHASE_MS, TimeUnit.MILLISECONDS);
+                            if (prog != null && !prog.isEmpty()) userSolution = programToUser(prog);
+                        } catch (TimeoutException te) {
+                            fut.cancel(true);
+                        } catch (Exception e) {
+                            fut.cancel(true);
+                        }
+                    }
+                } catch (Exception e) {
+                    userSolution = "";
+                }
+                try {
+                    Files.write(Paths.get(outFile), Arrays.asList(userSolution));
+                } catch (Exception ignored) { }
+                System.out.println(String.format("scramble%02d: %s", i, userSolution.isEmpty() ? "<no solution>" : userSolution));
+            }
+        } finally {
+            exec.shutdownNow();
+        }
+    }
+
+    // Solve a single cube with a timeout (ms). Uses brute for 1s then TwoPhase for remaining.
+    private static String solveOne(CubieCube cc, int timeoutMs) {
+        // brute portion
+        FullBruteSolver brute = new FullBruteSolver();
+        long bruteDeadline = System.currentTimeMillis() + Math.min(BRUTE_MS, timeoutMs);
+        String bruteProg = brute.solve(new CubieCube(cc), 9, bruteDeadline);
+        if (bruteProg != null && !bruteProg.isEmpty()) return bruteProg;
+
+        int remaining = Math.max(0, timeoutMs - BRUTE_MS);
+        TwoPhaseIDA twoPhase = new TwoPhaseIDA();
+        ExecutorService exec = Executors.newSingleThreadExecutor();
+        Future<String> fut = exec.submit(() -> twoPhase.solve(new CubieCube(cc)));
+        try {
+            String sol = fut.get(remaining, TimeUnit.MILLISECONDS);
+            exec.shutdownNow();
+            return sol == null ? "" : sol;
+        } catch (Exception e) {
+            fut.cancel(true);
+            exec.shutdownNow();
+            return "";
         }
     }
 
