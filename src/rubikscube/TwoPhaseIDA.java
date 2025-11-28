@@ -23,6 +23,7 @@ public class TwoPhaseIDA {
 
     // tracing for diagnostics (toggle externally)
     public static boolean TRACE = false;
+    public static boolean QUIET = true;
 
     // diagnostic toggles: allow temporarily ignoring EO or SLICE in phase-1 heuristic
     public static boolean IGNORE_EO_IN_H1 = false;
@@ -88,10 +89,12 @@ public class TwoPhaseIDA {
         phase2TimeMs = (tPhase2End - tPhase2Start) / 1_000_000L;
 
         if (!phase2Found) {
-            // dump mid state diagnostics to help debug phase-2 failures
-            System.err.println("TwoPhase: phase-2 failed — dumping mid-state after phase-1");
-            dumpMidState(mid);
-            System.err.println("Phase1Length=" + phase1Length + " heuristicP2Start=" + h2Start);
+            if (!QUIET) {
+                // dump mid state diagnostics to help debug phase-2 failures
+                System.err.println("TwoPhase: phase-2 failed — dumping mid-state after phase-1");
+                dumpMidState(mid);
+                System.err.println("Phase1Length=" + phase1Length + " heuristicP2Start=" + h2Start);
+            }
             return "";
         }
 
@@ -202,17 +205,12 @@ public class TwoPhaseIDA {
         int hUd = LightPruningTables.udPrunP2[udEp];
         int hUe = LightPruningTables.uEdgePrun[ue];
         int hDe = LightPruningTables.dEdgePrun[de];
-        int parity = LightPruningTables.permParityFromCoord(udEp) & 1;
-        int hCpUd = LightPruningTables.cpUdParityPrun[cp * 2 + parity];
-        int hCpSl = LightPruningTables.cpSlicePrunP2[cp * LightPruningTables.N_SLICE + sl];
 
         if (hCp < 0) hCp = 0;
         if (hUd < 0) hUd = 0;
         if (hUe < 0) hUe = 0;
         if (hDe < 0) hDe = 0;
-        if (hCpUd < 0) hCpUd = 0;
-        if (hCpSl < 0) hCpSl = 0;
-        return Math.max(Math.max(Math.max(hCp, hUd), Math.max(hUe, hDe)), Math.max(hCpUd, hCpSl));
+        return Math.max(Math.max(hCp, hUd), Math.max(hUe, hDe));
     }
 
     // ---------------- phase-1 search using coordinates ----------------
@@ -315,7 +313,7 @@ public class TwoPhaseIDA {
         ArrayList<MoveChoice> choices = new ArrayList<>();
         int baseH = h;
         for (int move = 0; move < 6; move++) {
-            if (lastMove >= 0 && Moves.blockPhase2Follow(lastMove, move)) continue; // block repeat/opposite
+            if (lastMove >= 0 && lastMove == move) continue; // only block exact repeat
             boolean isUD = (move == Moves.U || move == Moves.D);
             for (int p = 1; p <= 3; p++) {
                 if (!isUD && p != 2) continue; // restrict R/L/F/B to half-turns

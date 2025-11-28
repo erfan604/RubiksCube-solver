@@ -2,17 +2,12 @@ package rubikscube;
 
 import java.nio.file.*;
 import java.util.*;
-import java.util.concurrent.*;
 
 public class Solver {
 
-    private static final int DEFAULT_SOLVER_TIMEOUT_MS = 10_000;
-    private static final int BRUTE_MS = 1_000;
-    private static final int TWOPHASE_MS = 9_000;
-
     /**
-     * If args are provided: args[0]=scramble file, args[1]=output file, optional args[2]=timeoutSeconds
-     * Batch mode (no args): solves testcases/scramble01..40 into solutionXX.txt with 10s per scramble.
+     * If args are provided: args[0]=scramble file, args[1]=output file.
+     * Batch mode (no args): solves testcases/scramble01..40 into solutionXX.txt with no timeouts.
      */
     public static void main(String[] args) {
         MoveTables.init();
@@ -26,89 +21,51 @@ public class Solver {
 
         String inFile = args[0];
         String outFile = args[1];
-        int timeoutMs = DEFAULT_SOLVER_TIMEOUT_MS;
-        if (args.length >= 3) {
-            try { timeoutMs = Integer.parseInt(args[2]) * 1000; } catch (Exception ignored) { }
-        }
 
         try {
             List<String> lines = Files.readAllLines(Paths.get(inFile));
             char[] facelets = parseNet(lines);
             CubieCube cc = NetToCubie.fromFacelets(facelets);
-            String sol = solveOne(cc, timeoutMs);
-            String user = (sol == null || sol.isEmpty()) ? "" : programToUser(sol);
+            long t0 = System.nanoTime();
+            String sol = solveOne(cc);
+            double elapsedSec = (System.nanoTime() - t0) / 1_000_000_000.0;
+            String user = (sol == null || sol.isEmpty()) ? "" : programToCompact(sol);
             Files.write(Paths.get(outFile), Arrays.asList(user));
+            String label = Paths.get(inFile).getFileName().toString();
+            System.out.printf("%s %s in %.3f seconds%n", label, user.isEmpty() ? "unsolved" : "solved", elapsedSec);
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // Batch harness: testcases/scramble01..40 -> solutionXX.txt, 10s each (1s brute, 9s TwoPhase)
+    // Batch harness: testcases/scramble01..40 -> solutionXX.txt, no timeout limit
     private static void solveBatch() {
-        ExecutorService exec = Executors.newSingleThreadExecutor();
-        try {
-            for (int i = 1; i <= 40; i++) {
-                long t0 = System.nanoTime();
-                String scrambleFile = String.format("testcases/scramble%02d.txt", i);
-                String outFile = String.format("solution%02d.txt", i);
-                String userSolution = "";
-                try {
-                    List<String> lines = Files.readAllLines(Paths.get(scrambleFile));
-                    CubieCube cc = NetToCubie.fromFacelets(parseNetForVerify(lines));
-
-                    // quick brute try
-                    FullBruteSolver brute = new FullBruteSolver();
-                    long bruteDeadline = System.currentTimeMillis() + BRUTE_MS;
-                    String bruteProg = brute.solve(new CubieCube(cc), 9, bruteDeadline);
-                    if (bruteProg != null && !bruteProg.isEmpty()) {
-                        userSolution = programToUser(bruteProg);
-                    } else {
-                        // TwoPhase with timeout
-                        Future<String> fut = exec.submit(() -> new TwoPhaseIDA().solve(new CubieCube(cc)));
-                        try {
-                            String prog = fut.get(TWOPHASE_MS, TimeUnit.MILLISECONDS);
-                            if (prog != null && !prog.isEmpty()) userSolution = programToUser(prog);
-                        } catch (TimeoutException te) {
-                            fut.cancel(true);
-                        } catch (Exception e) {
-                            fut.cancel(true);
-                        }
-                    }
-                } catch (Exception e) {
-                    userSolution = "";
-                }
-                double elapsedSec = (System.nanoTime() - t0) / 1_000_000_000.0;
-                try {
-                    Files.write(Paths.get(outFile), Arrays.asList(userSolution));
-                } catch (Exception ignored) { }
-                System.out.println(String.format("scramble%02d: %s (%.3fs)", i, userSolution.isEmpty() ? "<no solution>" : userSolution, elapsedSec));
+        for (int i = 1; i <= 40; i++) {
+            long t0 = System.nanoTime();
+            String scrambleFile = String.format("testcases/scramble%02d.txt", i);
+            String outFile = String.format("solution%02d.txt", i);
+            String userSolution = "";
+            try {
+                List<String> lines = Files.readAllLines(Paths.get(scrambleFile));
+                CubieCube cc = NetToCubie.fromFacelets(parseNetForVerify(lines));
+                String prog = new TwoPhaseIDA().solve(new CubieCube(cc));
+                if (prog != null && !prog.isEmpty()) userSolution = programToCompact(prog);
+            } catch (Exception e) {
+                userSolution = "";
             }
-        } finally {
-            exec.shutdownNow();
+            double elapsedSec = (System.nanoTime() - t0) / 1_000_000_000.0;
+            try {
+                Files.write(Paths.get(outFile), Arrays.asList(userSolution));
+            } catch (Exception ignored) { }
+            System.out.printf("scramble%02d %s in %.3f seconds%n", i, userSolution.isEmpty() ? "unsolved" : "solved", elapsedSec);
         }
     }
 
-    // Solve a single cube with a timeout (ms). Uses brute for 1s then TwoPhase for remaining.
-    private static String solveOne(CubieCube cc, int timeoutMs) {
-        // brute portion
-        FullBruteSolver brute = new FullBruteSolver();
-        long bruteDeadline = System.currentTimeMillis() + Math.min(BRUTE_MS, timeoutMs);
-        String bruteProg = brute.solve(new CubieCube(cc), 9, bruteDeadline);
-        if (bruteProg != null && !bruteProg.isEmpty()) return bruteProg;
-
-        int remaining = Math.max(0, timeoutMs - BRUTE_MS);
+    // Solve a single cube with no timeout; direct TwoPhase search
+    private static String solveOne(CubieCube cc) {
         TwoPhaseIDA twoPhase = new TwoPhaseIDA();
-        ExecutorService exec = Executors.newSingleThreadExecutor();
-        Future<String> fut = exec.submit(() -> twoPhase.solve(new CubieCube(cc)));
-        try {
-            String sol = fut.get(remaining, TimeUnit.MILLISECONDS);
-            exec.shutdownNow();
-            return sol == null ? "" : sol;
-        } catch (Exception e) {
-            fut.cancel(true);
-            exec.shutdownNow();
-            return "";
-        }
+        String sol = twoPhase.solve(new CubieCube(cc));
+        return sol == null ? "" : sol;
     }
 
 
@@ -133,9 +90,15 @@ public class Solver {
         return out.toString();
     }
 
+    // convert program-format sequence to compact letters-only (no spaces, no suffixes)
+    private static String programToCompact(String seq) {
+        return CompactMoveEncoder.programToCompact(seq);
+    }
+
     // Public helpers used by other test/driver classes
     public static char[] parseNetForVerify(List<String> n) { return parseNet(n); }
     public static String programToUserPublic(String seq) { return programToUser(seq); }
+    public static String programToCompactPublic(String seq) { return programToCompact(seq); }
 
     private static char[] parseNet(List<String> n) {
         char[] f = new char[54];

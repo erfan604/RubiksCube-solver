@@ -45,7 +45,11 @@ public class VerifyAllSolutions {
     // simple parser for sequences like "U R2 F' ..."
     private static int parse(String seq, int[] mv, int[] pw) {
         if (seq == null || seq.trim().isEmpty()) return 0;
-        String[] toks = seq.trim().split("\\s+");
+        String trimmed = seq.trim();
+        if (CompactMoveEncoder.looksCompact(trimmed)) {
+            return CompactMoveEncoder.parseCompact(trimmed, mv, pw);
+        }
+        String[] toks = trimmed.split("\\s+");
         int idx = 0;
         for (String t : toks) {
             if (t.isEmpty()) continue;
