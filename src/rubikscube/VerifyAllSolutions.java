@@ -30,7 +30,6 @@ public class VerifyAllSolutions {
 
     // apply program/user-format sequence to the scramble and return whether it solves
     private static boolean checkSolution(String userSeq, String scrambleFile) throws Exception {
-        // reuse parser from Solver (user-format accepted by programToUserPublic)
         int[] mv = new int[512];
         int[] pw = new int[512];
         int len = parse(userSeq, mv, pw);

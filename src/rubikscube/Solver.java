@@ -102,27 +102,6 @@ public class Solver {
     }
 
 
-    // convert program-format seq to user-format (no special inversion)
-    private static String programToUser(String seq) {
-        if (seq == null) return "";
-        StringBuilder out = new StringBuilder();
-        String[] toks = seq.trim().split("\\s+");
-        for (int i = 0; i < toks.length; i++) {
-            String t = toks[i];
-            if (t.isEmpty()) continue;
-            char face = t.charAt(0);
-            int power = 1;
-            if (t.length() == 1) power = 1;
-            else if (t.charAt(1) == '2') power = 2;
-            else power = 3;
-            out.append(face);
-            if (power == 2) out.append('2');
-            else if (power == 3) out.append('\'');
-            if (i < toks.length - 1) out.append(' ');
-        }
-        return out.toString();
-    }
-
     // convert program-format sequence to compact letters-only (no spaces, no suffixes)
     private static String programToCompact(String seq) {
         return CompactMoveEncoder.programToCompact(seq);
@@ -130,8 +109,6 @@ public class Solver {
 
     // Public helpers used by other test/driver classes
     public static char[] parseNetForVerify(List<String> n) { return parseNet(n); }
-    public static String programToUserPublic(String seq) { return programToUser(seq); }
-    public static String programToCompactPublic(String seq) { return programToCompact(seq); }
 
     private static char[] parseNet(List<String> n) {
         char[] f = new char[54];
