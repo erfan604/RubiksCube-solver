@@ -31,7 +31,6 @@ public class TwoPhaseIDA {
         int startSL = start.getUDSliceCoord();
 
         // Phase-1 iterative deepening on CO/EO/SLICE
-        long tPhase1Start = System.nanoTime();
         boolean phase1Found = false;
         int h1Start = heuristicPhase1Coord(startCO, startEO, startSL);
         for (int depth1 = h1Start; depth1 <= MAX_DEPTH; depth1++) {
@@ -49,7 +48,6 @@ public class TwoPhaseIDA {
         for (int i = 0; i < phase1Length; i++) mid.applyMove(solutionMoves[i], solutionPowers[i]);
 
         // Phase-2 iterative deepening on CP/SLICE with restricted moves (U/D any, others half-turn)
-        long tPhase2Start = System.nanoTime();
         boolean phase2Found = false;
         phase2Length = 0;
         int midCP = mid.getCornerPermCoord();
@@ -231,14 +229,5 @@ public class TwoPhaseIDA {
         return false;
     }
 
-
-    // diagnostic helper to print coords and raw arrays for the mid state
-    private void dumpMidState(CubieCube mid) {
-        System.err.println("  mid cp: " + mid.getCornerPermCoord() + " sl: " + mid.getUDSliceCoord() + " ud: " + mid.getUDEdgePermCoord() + " ue: " + mid.getUEdgePermCoord() + " de: " + mid.getDEdgePermCoord());
-        System.err.print("  mid cp arr: "); for (int i=0;i<8;i++) System.err.print(mid.cp[i] + " "); System.err.println();
-        System.err.print("  mid co arr: "); for (int i=0;i<8;i++) System.err.print(mid.co[i] + " "); System.err.println();
-        System.err.print("  mid ep arr: "); for (int i=0;i<12;i++) System.err.print(mid.ep[i] + " "); System.err.println();
-        System.err.print("  mid eo arr: "); for (int i=0;i<12;i++) System.err.print(mid.eo[i] + " "); System.err.println();
-    }
     private static class MoveChoice { int move; int p; int h; int delta; boolean preferUD; MoveChoice(int m, int p, int h) { this.move = m; this.p = p; this.h = h; this.delta = 0; this.preferUD = false; } MoveChoice(int m, int p, int h, int delta, boolean preferUD) { this.move = m; this.p = p; this.h = h; this.delta = delta; this.preferUD = preferUD; } }
 }
