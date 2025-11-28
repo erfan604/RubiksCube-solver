@@ -35,7 +35,6 @@ public class Solver {
         }
     }
 
-    // Batch harness: testcases/scramble01..40 -> solutionXX.txt, no timeout limit
     private static void solveBatch() {
         for (int i = 1; i <= 40; i++) {
             long t0 = System.nanoTime();
@@ -58,9 +57,7 @@ public class Solver {
         }
     }
 
-    // Solve a single cube with no timeout; try a stricter prune first for hard scrambles, then fall back
     private static String solveOne(CubieCube cc) {
-        // Rough hardness estimate from phase-1 heuristic
         int h1 = estimatePhase1Heuristic(cc);
 
         if (h1 >= 7) {
@@ -83,13 +80,12 @@ public class Solver {
                 return sol;
             }
         }
-        // Fallback: relaxed pruning, no visited set to avoid false pruning
         TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = false;
         String fallback = new TwoPhaseIDA().solve(new CubieCube(cc));
         return fallback == null ? "" : fallback;
     }
 
-    // Phase-1 heuristic estimate (matches TwoPhaseIDA)
+    // Phase-1 heuristic estimate
     private static int estimatePhase1Heuristic(CubieCube c) {
         int co = c.getCornerOriCoord();
         int eo = c.getEdgeOriCoord();
@@ -102,12 +98,10 @@ public class Solver {
     }
 
 
-    // convert program-format sequence to compact letters-only (no spaces, no suffixes)
     private static String programToCompact(String seq) {
         return CompactMoveEncoder.programToCompact(seq);
     }
 
-    // Public helpers used by other test/driver classes
     public static char[] parseNetForVerify(List<String> n) { return parseNet(n); }
 
     private static char[] parseNet(List<String> n) {

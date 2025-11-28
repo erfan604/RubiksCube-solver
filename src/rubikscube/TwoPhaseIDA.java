@@ -228,6 +228,5 @@ public class TwoPhaseIDA {
 
         return false;
     }
-
     private static class MoveChoice { int move; int p; int h; int delta; boolean preferUD; MoveChoice(int m, int p, int h) { this.move = m; this.p = p; this.h = h; this.delta = 0; this.preferUD = false; } MoveChoice(int m, int p, int h, int delta, boolean preferUD) { this.move = m; this.p = p; this.h = h; this.delta = delta; this.preferUD = preferUD; } }
 }
