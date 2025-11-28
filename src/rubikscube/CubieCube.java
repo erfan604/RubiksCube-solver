@@ -4,7 +4,7 @@ import java.util.Arrays;
 
 public class CubieCube {
 
-    // --- CORNER INDICES ---
+    //Corner indices
     public static final int URF = 0;
     public static final int UFL = 1;
     public static final int ULB = 2;
@@ -14,7 +14,7 @@ public class CubieCube {
     public static final int DBL = 6;
     public static final int DRB = 7;
 
-    // --- EDGE INDICES ---
+    //Edge indices
     public static final int UR = 0;
     public static final int UF = 1;
     public static final int UL = 2;
@@ -29,7 +29,7 @@ public class CubieCube {
     public static final int BR = 11;
     public static final int SLICE_SOLVED_COORD = new CubieCube().getUDSliceCoord();
 
-    // state
+    //Corner permutation, corner orientaion, edge permutation and edge orientation
     public byte[] cp = new byte[8];
     public byte[] co = new byte[8];
     public byte[] ep = new byte[12];
@@ -61,7 +61,7 @@ public class CubieCube {
         co[d] = (byte)((co[d] + 1) % 3);
     }
 
-    // single clockwise quarter-turn (Singmaster)
+    //Moves
     public void move(int m) {
         switch (m) {
             case Moves.U:
@@ -69,7 +69,6 @@ public class CubieCube {
                 cycleCorner(co, URF, UBR, ULB, UFL);
                 cycleEdge(ep, UR, UB, UL, UF);
                 cycleEdge(eo, UR, UB, UL, UF);
-                // orientations unchanged
                 break;
             case Moves.R:
                 cycleCorner(cp, URF, DFR, DRB, UBR);
@@ -120,7 +119,7 @@ public class CubieCube {
         return true;
     }
 
-    // Corner orientation coord (3^7)
+    // Corner orientation coord 
     public int getCornerOriCoord() {
         int res = 0;
         for (int i = 0; i < 7; i++) res = res * 3 + co[i];
@@ -136,7 +135,7 @@ public class CubieCube {
         co[7] = (byte)((3 - sum % 3) % 3);
     }
 
-    // Edge orientation coord (2^11)
+    // Edge orientation coord
     public int getEdgeOriCoord() {
         int res = 0;
         for (int i = 0; i < 11; i++) res = (res << 1) | eo[i];
@@ -152,7 +151,7 @@ public class CubieCube {
         eo[11] = (byte)((sum % 2 == 0) ? 0 : 1);
     }
 
-    // UD-slice coordinate (C(12,4)=495)
+    // UD-slice coordinate
     private int nCr(int n, int r) {
         if (r > n) return 0;
         int res = 1;
@@ -161,7 +160,6 @@ public class CubieCube {
     }
 
     public int getUDSliceCoord() {
-        // combinatorial index of which 4 positions hold slice edges (FR,FL,BL,BR)
         int coord = 0;
         int r = 4;
         for (int i = 11; i >= 0 && r > 0; i--) {
@@ -196,7 +194,7 @@ public class CubieCube {
         }
     }
 
-    // Corner permutation coord (Lehmer)
+    // Corner permutation coord
     public int getCornerPermCoord() {
         int coord = 0; int[] used = new int[8];
         for (int i = 0; i < 8; i++) {
@@ -264,10 +262,9 @@ public class CubieCube {
 
     public int getUEdgePermCoord() {
         int[] perm = new int[4];
-        // assume phase-2: U-layer edges occupy positions 0..3
         for (int i = 0; i < 4; i++) {
-            int e = ep[i]; // piece at UR/UF/UL/UB
-            if (e < 0 || e > 3) return 0; // invalid for phase-2
+            int e = ep[i];
+            if (e < 0 || e > 3) return 0;
             perm[i] = e;
         }
         return permCoord4(perm);
@@ -285,7 +282,6 @@ public class CubieCube {
 
     public int getDEdgePermCoord() {
         int[] perm = new int[4];
-        // phase-2: D-layer edges occupy positions 4..7
         for (int i = 0; i < 4; i++) {
             int e = ep[4 + i];
             if (e < 4 || e > 7) return 0;
@@ -304,7 +300,6 @@ public class CubieCube {
 
     public static CubieCube fromDEdgePermCoord(int coord) { CubieCube c = new CubieCube(); c.setDEdgePermCoord(coord); return c; }
 
-    // factories
     public static CubieCube fromCornerOriCoord(int coord) { CubieCube c = new CubieCube(); c.setCornerOriCoord(coord); return c; }
     public static CubieCube fromEdgeOriCoord(int coord) { CubieCube c = new CubieCube(); c.setEdgeOriCoord(coord); return c; }
     public static CubieCube fromUDSliceCoord(int coord) {
@@ -315,7 +310,7 @@ public class CubieCube {
 
     public static CubieCube fromCornerPermCoord(int coord) { CubieCube c = new CubieCube(); c.setCornerPermCoord(coord); return c; }
 
-    // UD-edge permutation coordinate (8! for edges UR,UF,UL,UB,DR,DF,DL,DB assuming slice solved)
+    // UD-edge permutation coordinate
     public int getUDEdgePermCoord() {
         int[] perm = new int[8];
         int idx = 0;
@@ -359,7 +354,6 @@ public class CubieCube {
 
     public static CubieCube fromUDEdgePermCoord(int coord) { CubieCube c = new CubieCube(); c.setUDEdgePermCoord(coord); return c; }
 
-    // multiply and inverse
     public void multiply(CubieCube b, CubieCube out) {
         for (int i = 0; i < 8; i++) { out.cp[i] = cp[b.cp[i]]; out.co[i] = (byte)((co[b.cp[i]] + b.co[i]) % 3); }
         for (int i = 0; i < 12; i++) { out.ep[i] = ep[b.ep[i]]; out.eo[i] = (byte)((eo[b.ep[i]] + b.eo[i]) % 2); }

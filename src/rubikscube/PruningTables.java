@@ -2,21 +2,16 @@ package rubikscube;
 
 import java.util.*;
 
-/**
- * Pruning tables (PDBs) for coordinates.
- * Phase-1 tables: CO, EO, Slice, CP, UD edges.
- * Phase-2 helpers: CPxUD parity, CPxSlice, CPxUDxSlice (parity), U-edge perm, D-edge perm.
- * A full CPxUDxSlice parity table is built in memory (not cached) for stronger phase-2 heuristics.
- */
+
 public class PruningTables {
     public static final int N_CO = 2187;
     public static final int N_EO = 2048;
     public static final int N_SLICE = 495;
     public static final int N_CP = 40320;
     public static final int N_UD_EP = 40320;
-    public static final int N_CP_UD = N_CP * 2;          // cp x UD parity
-    public static final int N_CP_SLICE = N_CP * N_SLICE; // cp x slice
-    public static final int N_CP_UD_SLICE = N_CP * N_SLICE * 2; // cp x slice x UD parity
+    public static final int N_CP_UD = N_CP * 2;
+    public static final int N_CP_SLICE = N_CP * N_SLICE;
+    public static final int N_CP_UD_SLICE = N_CP * N_SLICE * 2;
     private static final int SLICE_SOLVED = CubieCube.SLICE_SOLVED_COORD;
 
     public static final byte[] coPrun = new byte[N_CO];
@@ -31,7 +26,7 @@ public class PruningTables {
     public static final byte[] cpUdPrun = new byte[N_CP_UD];
     public static final byte[] cpSlicePrun2 = new byte[N_CP_SLICE];
     public static final byte[] cpUdSlicePrun = new byte[N_CP_UD_SLICE];
-    public static final byte[] cpUdSliceFull = new byte[N_CP_UD_SLICE]; // in-memory only
+    public static final byte[] cpUdSliceFull = new byte[N_CP_UD_SLICE];
     public static final byte[] uEdgePrun = new byte[24];
     public static final byte[] dEdgePrun = new byte[24];
     public static final byte[] udParity = new byte[N_UD_EP];
@@ -39,7 +34,6 @@ public class PruningTables {
     public static volatile boolean initialized = false;
     private static volatile boolean started = false;
 
-    // ---------- build control ----------
     public static synchronized void initAsyncStart() {
         if (started) return;
         started = true;
@@ -83,7 +77,6 @@ public class PruningTables {
         uEdgePrun[0] = dEdgePrun[0] = 0;
     }
 
-    // ---------- builders ----------
     private static void prioritizedBuildLoop() {
         buildCO(); buildEO(); buildSlice(); buildCP(); buildUDEP();
         System.arraycopy(cpPrun, 0, cp2Prun, 0, cpPrun.length);
@@ -282,7 +275,6 @@ public class PruningTables {
         }
     }
 
-    // ---------- readiness accessors (used by harness/debug) ----------
     public static boolean isCOReady() { return coPrun != null && coPrun.length == N_CO && coPrun[0] != -1; }
     public static boolean isEOReady() { return eoPrun != null && eoPrun.length == N_EO && eoPrun[0] != -1; }
     public static boolean isSliceReady() { return slicePrun != null && slicePrun.length == N_SLICE && slicePrun[0] != -1; }

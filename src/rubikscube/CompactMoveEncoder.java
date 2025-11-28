@@ -1,20 +1,9 @@
 package rubikscube;
 
-/**
- * Converts move sequences into a compact format that uses only the letters
- * F, B, R, L, U, D with no spaces or suffixes.
- * Rules:
- *  - Quarter turn: single letter (e.g., "R")
- *  - Half turn: letter twice (e.g., "RR")
- *  - Prime/inverse: letter three times (e.g., "RRR")
- *
- * The solver never emits consecutive moves on the same face, so repeating
- * a letter per power stays unambiguous.
- */
+// Translate moves into only clockwise notation
 public final class CompactMoveEncoder {
     private CompactMoveEncoder() {}
 
-    /** Convert a program-format sequence ("U R2 F'") into compact letters only ("URRFFF"). */
     public static String programToCompact(String programSeq) {
         if (programSeq == null || programSeq.trim().isEmpty()) return "";
         StringBuilder out = new StringBuilder();
@@ -26,17 +15,14 @@ public final class CompactMoveEncoder {
             if (t.length() >= 2) {
                 char suffix = t.charAt(1);
                 if (suffix == '2') repeat = 2;
-                else repeat = 3; // treat anything else as inverse
+                else repeat = 3;
             }
             for (int i = 0; i < repeat; i++) out.append(face);
         }
         return out.toString();
     }
 
-    /**
-     * Parse a compact sequence (letters only, no spaces) into move/power arrays.
-     * Returns the number of moves parsed.
-     */
+
     public static int parseCompact(String compactSeq, int[] mv, int[] pw) {
         if (compactSeq == null) return 0;
         String s = compactSeq.trim();
@@ -64,7 +50,6 @@ public final class CompactMoveEncoder {
         return idx;
     }
 
-    /** Heuristic to detect if a string is in compact form (letters only, no digits/apostrophes/spaces). */
     public static boolean looksCompact(String seq) {
         if (seq == null) return false;
         String s = seq.trim();

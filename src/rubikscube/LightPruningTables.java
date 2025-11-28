@@ -3,14 +3,7 @@ package rubikscube;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 
-/**
- * Lightweight pruning tables built entirely at runtime.
- * Focuses on:
- *  - Phase 1: CO×slice and EO×slice distances.
- *  - Phase 2: CP, UD-edge, U-edge-only, D-edge-only distances with restricted moves.
- *
- * No disk cache; tables are small enough to rebuild per run (~sub-second on modern CPUs).
- */
+
 public class LightPruningTables {
 
     public static final int N_CO = 2187;
@@ -51,7 +44,7 @@ public class LightPruningTables {
     private static int coSliceIdx(int co, int sl) { return co * N_SLICE + sl; }
     private static int eoSliceIdx(int eo, int sl) { return eo * N_SLICE + sl; }
 
-    // ---------- Phase-1 tables ----------
+    // Phase-1 tables
     private static void buildCoSlice() {
         Arrays.fill(coSlicePrun, (byte)-1);
         int startIdx = coSliceIdx(0, CubieCube.SLICE_SOLVED_COORD);
@@ -110,7 +103,7 @@ public class LightPruningTables {
         }
     }
 
-    // ---------- Phase-2 tables (restricted move set: U/D any, others half-turn only) ----------
+    // Phase-2 tables (restricted move set: U/D any, others half-turn only)
     private static void buildCpP2() {
         Arrays.fill(cpPrunP2, (byte)-1);
         cpPrunP2[0] = 0;
@@ -195,7 +188,7 @@ public class LightPruningTables {
         int startKey = 0 * N_SLICE + CubieCube.SLICE_SOLVED_COORD;
         cpSlicePrunP2[startKey] = 0;
         ArrayDeque<int[]> q = new ArrayDeque<>();
-        q.add(new int[]{0, CubieCube.SLICE_SOLVED_COORD}); // cp, slice
+        q.add(new int[]{0, CubieCube.SLICE_SOLVED_COORD});
         int depth = 0;
         while (!q.isEmpty()) {
             ArrayDeque<int[]> next = new ArrayDeque<>();
@@ -226,7 +219,7 @@ public class LightPruningTables {
         int startKey = ((0 * N_SLICE) + CubieCube.SLICE_SOLVED_COORD) * 2 + 0;
         cpUdSlicePrunP2[startKey] = 0;
         ArrayDeque<int[]> q = new ArrayDeque<>();
-        q.add(new int[]{0, CubieCube.SLICE_SOLVED_COORD, 0}); // cp, slice, udEp
+        q.add(new int[]{0, CubieCube.SLICE_SOLVED_COORD, 0});
         int depth = 0;
         while (!q.isEmpty()) {
             ArrayDeque<int[]> next = new ArrayDeque<>();

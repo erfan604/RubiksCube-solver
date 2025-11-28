@@ -2,16 +2,13 @@ package rubikscube;
 
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class Solver {
 
-    /**
-     * If args are provided: args[0]=scramble file, args[1]=output file.
-     * Batch mode (no args): solves testcases/scramble01..40 into solutionXX.txt with no timeouts.
-     */
+
     public static void main(String[] args) {
         MoveTables.init();
-        // build light in-memory tables each run (no disk cache)
         LightPruningTables.buildAllBlocking();
 
         if (args.length < 2) {
@@ -61,11 +58,50 @@ public class Solver {
         }
     }
 
-    // Solve a single cube with no timeout; direct TwoPhase search
+    // Solve a single cube with no timeout; try a stricter prune first for hard scrambles, then fall back
     private static String solveOne(CubieCube cc) {
-        TwoPhaseIDA twoPhase = new TwoPhaseIDA();
-        String sol = twoPhase.solve(new CubieCube(cc));
-        return sol == null ? "" : sol;
+        // Rough hardness estimate from phase-1 heuristic
+        int h1 = estimatePhase1Heuristic(cc);
+
+        if (h1 >= 7) {
+            // Pass 1: stricter phase-2 pruning with opposite blocking to speed deeper cases
+            TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = true;
+            TwoPhaseIDA.USE_PHASE2_VISITED = false;
+            ExecutorService exec = Executors.newSingleThreadExecutor();
+            Future<String> strict = exec.submit(() -> new TwoPhaseIDA().solve(new CubieCube(cc)));
+            String sol = "";
+            try {
+                sol = strict.get(8, TimeUnit.SECONDS);
+            } catch (TimeoutException te) {
+                strict.cancel(true);
+            } catch (Exception e) {
+                strict.cancel(true);
+            } finally {
+                exec.shutdownNow();
+            }
+            if (sol != null && !sol.isEmpty()) {
+                TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = false;
+                TwoPhaseIDA.USE_PHASE2_VISITED = false;
+                return sol;
+            }
+        }
+        // Fallback: relaxed pruning, no visited set to avoid false pruning
+        TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = false;
+        TwoPhaseIDA.USE_PHASE2_VISITED = false;
+        String fallback = new TwoPhaseIDA().solve(new CubieCube(cc));
+        return fallback == null ? "" : fallback;
+    }
+
+    // Phase-1 heuristic estimate (matches TwoPhaseIDA)
+    private static int estimatePhase1Heuristic(CubieCube c) {
+        int co = c.getCornerOriCoord();
+        int eo = c.getEdgeOriCoord();
+        int sl = c.getUDSliceCoord();
+        int hCo = LightPruningTables.coSlicePrun[co * LightPruningTables.N_SLICE + sl];
+        int hEo = LightPruningTables.eoSlicePrun[eo * LightPruningTables.N_SLICE + sl];
+        if (hCo < 0) hCo = 0;
+        if (hEo < 0) hEo = 0;
+        return Math.max(hCo, hEo);
     }
 
 

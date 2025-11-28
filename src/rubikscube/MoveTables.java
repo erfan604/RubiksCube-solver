@@ -1,17 +1,16 @@
 package rubikscube;
 
-/**
- * Precomputed move tables for coordinate transforms.
- */
+// Tables to solve small portions of the cube
+// such as specific corners and edges.
 public class MoveTables {
 
-    public static int[][][] coMove;    // [move][power][coord]
+    public static int[][][] coMove;
     public static int[][][] eoMove;
     public static int[][][] sliceMove;
     public static int[][][] cpMove;
     public static int[][][] udEpMove;
-    public static int[][][] uEdgeMove; // 4! = 24
-    public static int[][][] dEdgeMove; // 4! = 24
+    public static int[][][] uEdgeMove;
+    public static int[][][] dEdgeMove;
 
     private static volatile boolean initialized = false;
 

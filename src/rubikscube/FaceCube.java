@@ -8,9 +8,7 @@ public class FaceCube {
 
     public char[] f = new char[54];
 
-    // -------------------------------------------------
     // Constructor: save the 54 facelets and detect centers
-    // -------------------------------------------------
     public FaceCube(char[] facelets) {
         System.arraycopy(facelets, 0, f, 0, 54);
 
@@ -22,74 +20,68 @@ public class FaceCube {
         Bc = f[40];   // B center
     }
 
-    // -------------------------------------------------
-    // CORNER facelet positions (layout matching Solver.parseNet)
-    // -------------------------------------------------
+    // Corner facelet positions (layout matching Solver.parseNet)
     private static final int[][] CORNER_FACELET = {
             { 8, 27, 20 }, // URF
             { 6, 18, 11 }, // UFL
             { 0,  9, 38 }, // ULB
             { 2, 36, 29 }, // UBR
-            { 47, 26, 33 },// DFR
-            { 45, 17, 24 },// DLF
-            { 51, 44, 15 },// DBL
+            { 47, 26, 33 }, // DFR
+            { 45, 17, 24 }, // DLF
+            { 51, 44, 15 }, // DBL
             { 53, 35, 42 } // DRB
     };
 
-    // -------------------------------------------------
-    // EDGE facelet positions (layout matching Solver.parseNet)
-    // -------------------------------------------------
+    // Edge facelet positions (layout matching Solver.parseNet)
     private static final int[][] EDGE_FACELET = {
-            {5, 28},   // 0 UR
-            {7, 19},   // 1 UF
-            {3, 10},   // 2 UL
-            {1, 37},   // 3 UB
+            {5, 28}, // 0 UR
+            {7, 19}, // 1 UF
+            {3, 10}, // 2 UL
+            {1, 37}, // 3 UB
 
-            {50, 34},  // 4 DR
-            {46, 25},  // 5 DF
-            {48, 16},  // 6 DL
-            {52, 43},  // 7 DB
+            {50, 34}, // 4 DR
+            {46, 25}, // 5 DF
+            {48, 16}, // 6 DL
+            {52, 43}, // 7 DB
 
-            {23, 30},  // 8 FR
-            {21, 14},  // 9 FL
-            {41, 12},  //10 BL
-            {39, 32}   //11 BR
+            {23, 30}, // 8 FR
+            {21, 14}, // 9 FL
+            {41, 12}, //10 BL
+            {39, 32} //11 BR
     };
 
     // dynamic color accessors to ensure centers are already captured
     private char[][] cornerColors() {
         return new char[][] {
-                {Uc, Rc, Fc},  // URF
-                {Uc, Fc, Lc},  // UFL
-                {Uc, Lc, Bc},  // ULB
-                {Uc, Bc, Rc},  // UBR
-                {Dc, Fc, Rc},  // DFR
-                {Dc, Lc, Fc},  // DLF
-                {Dc, Bc, Lc},  // DBL
-                {Dc, Rc, Bc}   // DRB
+                {Uc, Rc, Fc}, // URF
+                {Uc, Fc, Lc}, // UFL
+                {Uc, Lc, Bc}, // ULB
+                {Uc, Bc, Rc}, // UBR
+                {Dc, Fc, Rc}, // DFR
+                {Dc, Lc, Fc}, // DLF
+                {Dc, Bc, Lc}, // DBL
+                {Dc, Rc, Bc} // DRB
         };
     }
 
     private char[][] edgeColors() {
         return new char[][] {
-                {Uc, Rc},   // UR
-                {Uc, Fc},   // UF
-                {Uc, Lc},   // UL
-                {Uc, Bc},   // UB
-                {Dc, Rc},   // DR
-                {Dc, Fc},   // DF
-                {Dc, Lc},   // DL
-                {Dc, Bc},   // DB
-                {Fc, Rc},   // FR
-                {Fc, Lc},   // FL
-                {Bc, Lc},   // BL
-                {Bc, Rc}    // BR
+                {Uc, Rc}, // UR
+                {Uc, Fc}, // UF
+                {Uc, Lc}, // UL
+                {Uc, Bc}, // UB
+                {Dc, Rc}, // DR
+                {Dc, Fc}, // DF
+                {Dc, Lc}, // DL
+                {Dc, Bc}, // DB
+                {Fc, Rc}, // FR
+                {Fc, Lc}, // FL
+                {Bc, Lc}, // BL
+                {Bc, Rc} // BR
         };
     }
 
-    // -------------------------------------------------
-    // CORNER PERMUTATION + ORIENTATION
-    // -------------------------------------------------
+    // Corner permutation and orientation
     public byte getCornerPerm(int c) {
         char a = f[CORNER_FACELET[c][0]];
         char b = f[CORNER_FACELET[c][1]];
@@ -130,9 +122,7 @@ public class FaceCube {
                 || (a==z && b==x && c==y);
     }
 
-    // -------------------------------------------------
-    // EDGE PERMUTATION + ORIENTATION
-    // -------------------------------------------------
+    // Edge permutation and orientation
     public byte getEdgePerm(int e) {
         char a = f[EDGE_FACELET[e][0]];
         char b = f[EDGE_FACELET[e][1]];
@@ -146,9 +136,7 @@ public class FaceCube {
 
         if (edge == -1) return 0;
 
-        // Orientation rules (Kociemba style):
-        //  - U/D layer edges are "good" if their U/D sticker is on U/D.
-        //  - Slice edges are "good" if their F/B sticker is on F/B.
+        // Orientation rules (Kociemba style)
         if (edge >= 8 && edge <= 11) {
             return (byte) ((a == Fc || a == Bc) ? 0 : 1);
         }

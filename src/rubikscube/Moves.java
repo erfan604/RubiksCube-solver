@@ -19,31 +19,25 @@ public class Moves {
             3, 4, 5, 0, 1, 2
     };
 
-    /**
-     * Simple 1-ply pruning: only disallow turning the same face twice in a row.
-     * Axis-level pruning was blocking some short solutions for easy scrambles.
-     */
+
     public static boolean sameAxis(int a, int b) {
         return a == b;
     }
 
-    /** Axis-based pruning (old behavior) to optionally reduce branching. */
     public static boolean sameAxisFull(int a, int b) {
         if (a == U || a == D) return (b == U || b == D);
         if (a == R || a == L) return (b == R || b == L);
         return (b == F || b == B);
     }
 
-    /**
-     * Phase-2 specific pruning: disallow immediate repeats and immediate opposites.
-     */
+    // Block immediate repeats and immediate opposites.
     public static boolean blockPhase2Follow(int prev, int next) {
         if (prev < 0) return false;
         if (prev == next) return true;
         return INV_MOVE[prev] == next;
     }
 
-    // Generate the move string (simple)
+    // Generate the move string
     public static String moveToString(int move, int power) {
         switch (power) {
             case 1: return MOVE_NAMES[move];

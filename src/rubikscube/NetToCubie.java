@@ -2,15 +2,10 @@ package rubikscube;
 
 import java.util.Arrays;
 
-/**
- * Converts a 54-facelet net (Kociemba indexing) into a {@link CubieCube}.
- * Uses the same facelet mapping and orientation rules as {@link FaceCube}
- * so the resulting cp/ep/co/eo work with the move tables.
- */
+// Converting stickers from assignment 1 to cubies.
 public class NetToCubie {
     private static final boolean DEBUG = false;
 
-    // Facelet indices for the 6 centers in Kociemba layout
     private static final int U_CENTER = 4;
     private static final int R_CENTER = 31;
     private static final int F_CENTER = 22;
@@ -23,7 +18,6 @@ public class NetToCubie {
             throw new IllegalArgumentException("Expected 54 facelets");
         }
 
-        // Build via FaceCube to avoid duplicated mapping/orientation logic.
         FaceCube fc = new FaceCube(f);
         CubieCube cc = new CubieCube();
 

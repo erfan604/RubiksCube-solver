@@ -4,7 +4,6 @@ import java.util.*;
 
 public class TwoPhaseIDA {
 
-    // keep a reasonable max depth for both phases
     private static final int MAX_DEPTH = 45;
     private static final int SLICE_SOLVED = CubieCube.SLICE_SOLVED_COORD;
 
@@ -14,31 +13,28 @@ public class TwoPhaseIDA {
     private int phase2Length;
     private Map<Long, Integer> phase2Visited = new HashMap<>();
 
-    // preserve original start cube so phase-2 diagnostics can reconstruct mid-cube
     private CubieCube startCube = null;
 
-    // timing (milliseconds)
     private long phase1TimeMs = 0;
     private long phase2TimeMs = 0;
 
-    // tracing for diagnostics (toggle externally)
     public static boolean TRACE = false;
     public static boolean QUIET = true;
 
-    // diagnostic toggles: allow temporarily ignoring EO or SLICE in phase-1 heuristic
     public static boolean IGNORE_EO_IN_H1 = false;
     public static boolean IGNORE_SLICE_IN_H1 = false;
-    // Reduce stderr spam unless explicitly enabled
+
     public static boolean LOG_PHASE2_FAILS = false;
     public static boolean LOG_SOLUTION_DETAILS = false;
     public static boolean USE_PHASE2_VISITED = false;
+    public static boolean BLOCK_OPPOSITE_IN_PHASE2 = false;
 
     public String solve(CubieCube start) {
-        // Ensure move/coord tables and pruning tables are ready
+
         MoveTables.init();
         LightPruningTables.buildAllBlocking();
 
-        // keep a copy of original start for diagnostics
+
         this.startCube = new CubieCube(start);
 
         if (start.isSolved()) return "";
@@ -51,6 +47,7 @@ public class TwoPhaseIDA {
         long tPhase1Start = System.nanoTime();
         boolean phase1Found = false;
         int h1Start = heuristicPhase1Coord(startCO, startEO, startSL);
+        if (!QUIET) System.err.println("TwoPhase: h1Start=" + h1Start);
         for (int depth1 = h1Start; depth1 <= MAX_DEPTH; depth1++) {
             if (Thread.currentThread().isInterrupted()) break;
             if (searchPhase1Coord(startCO, startEO, startSL, 0, depth1, -1)) {
@@ -63,7 +60,7 @@ public class TwoPhaseIDA {
 
         if (!phase1Found) return "";
 
-        // reconstruct mid-cube by applying phase1 moves
+
         CubieCube mid = new CubieCube(start);
         for (int i = 0; i < phase1Length; i++) mid.applyMove(solutionMoves[i], solutionPowers[i]);
 
@@ -78,6 +75,7 @@ public class TwoPhaseIDA {
         int midUE = mid.getUEdgePermCoord();
         int midDE = mid.getDEdgePermCoord();
         int h2Start = heuristicPhase2Coord(midCP, midSL, midUD, midUE, midDE);
+        if (!QUIET) System.err.println("TwoPhase: h2Start=" + h2Start + " after phase1Length=" + phase1Length);
         for (int depth2 = h2Start; depth2 <= MAX_DEPTH; depth2++) {
             if (Thread.currentThread().isInterrupted()) break;
             if (searchPhase2Coord(midCP, midSL, midUD, midUE, midDE, 0, depth2, -1)) {
@@ -90,7 +88,7 @@ public class TwoPhaseIDA {
 
         if (!phase2Found) {
             if (!QUIET) {
-                // dump mid state diagnostics to help debug phase-2 failures
+
                 System.err.println("TwoPhase: phase-2 failed — dumping mid-state after phase-1");
                 dumpMidState(mid);
                 System.err.println("Phase1Length=" + phase1Length + " heuristicP2Start=" + h2Start);
@@ -99,10 +97,10 @@ public class TwoPhaseIDA {
         }
 
         int total = phase1Length + phase2Length;
-        // clear trailing entries
+
         for (int i = total; i < solutionMoves.length; i++) { solutionMoves[i] = 0; solutionPowers[i] = 0; }
 
-        // build program-format solution string
+
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < total; i++) {
             sb.append(Moves.moveToString(solutionMoves[i], solutionPowers[i]));
@@ -110,13 +108,12 @@ public class TwoPhaseIDA {
         }
         String sol = sb.toString();
 
-        // Diagnostic: print program-format and user-format and reversed+inverted form for verification
         if (LOG_SOLUTION_DETAILS) {
             try {
                 System.err.println("TwoPhase: program-format solution: " + sol);
                 String userForm = Solver.programToUserPublic(sol);
                 System.err.println("TwoPhase: user-format solution: " + userForm);
-                // build reversed+inverted program-format
+
                 StringBuilder rev = new StringBuilder();
                 for (int i = total - 1; i >= 0; i--) {
                     int mv = solutionMoves[i]; int pw = solutionPowers[i];
@@ -129,12 +126,11 @@ public class TwoPhaseIDA {
             } catch (Throwable t) { /* ignore */ }
         }
 
-        // verify assembled solution
         CubieCube test = new CubieCube(start);
         for (int i = 0; i < total; i++) test.applyMove(solutionMoves[i], solutionPowers[i]);
         if (!test.isSolved()) {
             if (LOG_PHASE2_FAILS) {
-                // diagnostic output to stderr for debugging assembly/coord mismatch
+
                 System.err.println("TwoPhase assembled solution failed final verification — dumping diagnostics");
                 System.err.println("phase1Length=" + phase1Length + " phase2Length=" + phase2Length + " total=" + total);
                 System.err.println("SolutionMoves: " + Arrays.toString(Arrays.copyOf(solutionMoves, total)));
@@ -189,31 +185,36 @@ public class TwoPhaseIDA {
     public int[] getSolutionMovesArray() { return solutionMoves; }
     public int[] getSolutionPowersArray() { return solutionPowers; }
 
-    // ---------------- heuristics using coord tables ----------------
     private int heuristicPhase1Coord(int co, int eo, int sl) {
         int hCo = IGNORE_EO_IN_H1 ? 0 : LightPruningTables.coSlicePrun[co * LightPruningTables.N_SLICE + sl];
         int hEo = IGNORE_EO_IN_H1 ? 0 : LightPruningTables.eoSlicePrun[eo * LightPruningTables.N_SLICE + sl];
         if (hCo < 0) hCo = 0;
         if (hEo < 0) hEo = 0;
-        // We ignore slice-only table here since slice is already part of the paired lookups.
+
         return Math.max(hCo, hEo);
     }
 
     private int heuristicPhase2Coord(int cp, int sl, int udEp, int ue, int de) {
-        // phase-2 heuristic: combine CP and UD-edge pruning, plus small U/D edge perms for extra guidance
+
+        int parity = LightPruningTables.permParityFromCoord(udEp) & 1;
         int hCp = LightPruningTables.cpPrunP2[cp];
+        int hCpSliceParity = LightPruningTables.cpUdSlicePrunP2[((cp * LightPruningTables.N_SLICE) + sl) * 2 + parity];
+        int hCpParity = LightPruningTables.cpUdParityPrun[cp * 2 + parity];
         int hUd = LightPruningTables.udPrunP2[udEp];
         int hUe = LightPruningTables.uEdgePrun[ue];
         int hDe = LightPruningTables.dEdgePrun[de];
 
         if (hCp < 0) hCp = 0;
+        if (hCpSliceParity < 0) hCpSliceParity = 0;
+        if (hCpParity < 0) hCpParity = 0;
         if (hUd < 0) hUd = 0;
         if (hUe < 0) hUe = 0;
         if (hDe < 0) hDe = 0;
-        return Math.max(Math.max(hCp, hUd), Math.max(hUe, hDe));
+        int combo = Math.max(Math.max(hCpSliceParity, hCpParity), hCp);
+        return Math.max(Math.max(combo, hUd), Math.max(hUe, hDe));
     }
 
-    // ---------------- phase-1 search using coordinates ----------------
+    // Phase-1 search using coordinates
     private boolean searchPhase1Coord(int co, int eo, int sl, int depth, int limit, int lastMove) {
         if (Thread.currentThread().isInterrupted()) return false;
         int h = heuristicPhase1Coord(co, eo, sl);
@@ -261,7 +262,7 @@ public class TwoPhaseIDA {
         return false;
     }
 
-    // ---------------- phase-2 search (restricted moves) using coordinates ----------------
+    // Phase-2 search (restricted moves) using coordinates
     private boolean searchPhase2Coord(int cp, int sl, int udEp, int ue, int de, int depth, int limit, int lastMove) {
         if (Thread.currentThread().isInterrupted()) return false;
         int h = heuristicPhase2Coord(cp, sl, udEp, ue, de);
@@ -313,7 +314,11 @@ public class TwoPhaseIDA {
         ArrayList<MoveChoice> choices = new ArrayList<>();
         int baseH = h;
         for (int move = 0; move < 6; move++) {
-            if (lastMove >= 0 && lastMove == move) continue; // only block exact repeat
+            if (lastMove >= 0) {
+                if (BLOCK_OPPOSITE_IN_PHASE2) {
+                    if (Moves.blockPhase2Follow(lastMove, move)) continue;
+                } else if (lastMove == move) continue;
+            }
             boolean isUD = (move == Moves.U || move == Moves.D);
             for (int p = 1; p <= 3; p++) {
                 if (!isUD && p != 2) continue; // restrict R/L/F/B to half-turns
