@@ -66,7 +66,6 @@ public class Solver {
         if (h1 >= 7) {
             // Pass 1: stricter phase-2 pruning with opposite blocking to speed deeper cases
             TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = true;
-            TwoPhaseIDA.USE_PHASE2_VISITED = false;
             ExecutorService exec = Executors.newSingleThreadExecutor();
             Future<String> strict = exec.submit(() -> new TwoPhaseIDA().solve(new CubieCube(cc)));
             String sol = "";
@@ -81,13 +80,11 @@ public class Solver {
             }
             if (sol != null && !sol.isEmpty()) {
                 TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = false;
-                TwoPhaseIDA.USE_PHASE2_VISITED = false;
                 return sol;
             }
         }
         // Fallback: relaxed pruning, no visited set to avoid false pruning
         TwoPhaseIDA.BLOCK_OPPOSITE_IN_PHASE2 = false;
-        TwoPhaseIDA.USE_PHASE2_VISITED = false;
         String fallback = new TwoPhaseIDA().solve(new CubieCube(cc));
         return fallback == null ? "" : fallback;
     }
